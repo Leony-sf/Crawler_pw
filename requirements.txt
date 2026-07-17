@@ -1,0 +1,32 @@
+playwright
+playwright-stealth
+selenium
+webdriver-manager
+pandas
+pyarrow
+openpyxl
+beautifulsoup4
+lxml
+requests
+tqdm
+python-dotenv
+
+
+
+"""
+Para ativar o ambiente virtual, execute o seguinte comando no terminal:
+
+    source venv/bin/activate   ou   venv\Scripts\activate
+
+    
+para instalar as dependências, execute os seguintes comandos no terminal:
+
+    pip install -r requirements.txt   ou    python -m pip install -r requirements.txt
+
+
+instale também o navegador do playwright com o comando:
+
+    python -m playwright install chromium
+
+
+"""
