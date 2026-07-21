@@ -108,7 +108,6 @@ class BaseAnatel:
 
 def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> BaseAnatel | None:
     """Carrega e prepara a base ANATEL.
-
     Se nenhum caminho for informado, retorna None para permitir execução em modo SEM_BASE.
     """
     if not caminho:
@@ -119,8 +118,7 @@ def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> 
     if df.empty:
         raise ValueError("CSV da ANATEL está vazio.")
 
-    # Prioridade absoluta para o nome oficial da base enviada pelo usuário.
-    # Isso evita escolher coluna errada quando o CSV tiver vários campos com termos parecidos.
+    # Prioridade absoluta para o nome oficial da base enviada
     if "Número de Homologação" in df.columns:
         col_hom = "Número de Homologação"
     else:
@@ -133,6 +131,7 @@ def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> 
                 ["homologa"],
             ],
         )
+        
     if not col_hom:
         raise ValueError(f"Não encontrei a coluna de homologação. Colunas: {list(df.columns)}")
 
@@ -143,11 +142,20 @@ def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> 
             ["fabricante"],
         ],
     )
+
     col_modelo = _achar_coluna(
         df,
         [
             ["modelo"],
             ["nome", "modelo"],
+        ],
+    )
+    
+    col_nome_comercial = _achar_coluna(
+        df,
+        [
+            ["nome", "comercial"],
+            ["nomecomercial"],
         ],
     )
 
@@ -167,8 +175,13 @@ def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> 
         base["modelo_base"] = base[col_modelo].apply(normalizar_texto)
     else:
         base["modelo_base"] = ""
+        
+    if col_nome_comercial:
+        base["nome_comercial_base"] = base[col_nome_comercial].apply(normalizar_texto)
+    else:
+        base["nome_comercial_base"] = ""
 
-    base = base.drop_duplicates(subset=["homologacao_key", "fabricante_base", "modelo_base"], keep="first")
+    base = base.drop_duplicates(subset=["homologacao_key", "fabricante_base", "modelo_base", "nome_comercial_base"], keep="first")
     base = base.set_index("homologacao_key", drop=False)
 
     bloco("base")
@@ -177,6 +190,7 @@ def carregar_base_anatel(caminho: Optional[str] = None, prefix_len: int = 5) -> 
     log("base", f"Coluna homologação: {col_hom}")
     log("base", f"Coluna fabricante/marca: {col_fab or 'não encontrada'}")
     log("base", f"Coluna modelo: {col_modelo or 'não encontrada'}")
+    log("base", f"Coluna nome comercial: {col_nome_comercial or 'não encontrada'}")
     log("base", f"Regra: código exato OU prefixo de {prefix_len} dígitos")
 
     return BaseAnatel(
