@@ -495,7 +495,7 @@ Antes de rodar:
 
 Mercado Livre:
 
-python main.py --query celular --limit 50 --max-paginas 1 --base Produtos_Homologados_Anatel.csv
+python main.py --query "bm10, i17 pro, telefone dobrável" --limit 100 --max-paginas 10 --base "Produtos_Homologados_Anatel.csv" --mini-celulares --limite-por-query 20 --compras-internacionais
 
 Shopee:
 
