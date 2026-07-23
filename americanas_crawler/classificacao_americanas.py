@@ -3,16 +3,9 @@
 Regras de classificação para o crawler Americanas.com.
 
 Regra operacional:
-- aparelho celular com maior dimensão física <= 80 mm = IRREGULAR;
-- aparelho celular com maior dimensão física > 80 mm e <= 90 mm = SUSPEITO;
-- aparelho celular sem medida física localizada = DESCARTADO, exceto quando houver indício forte de mini celular <= 80 mm;
-- aparelho celular com maior dimensão física > 90 mm = DESCARTADO;
-- sem medida física + indício forte de mini celular <= 80 mm = SUSPEITO;
-- acessórios/peças/brinquedos sem indício real de telefonia são descartados.
-
-A classificação usa a MAIOR dimensão física do aparelho para evitar falso positivo
-por largura/espessura. Ex.: 165 x 76 x 8 mm é descartado, pois a maior dimensão
-é 165 mm, mesmo que a largura seja menor que 80 mm.
+- aparelho celular com altura <= 120 mm e largura <= 55 mm = MINI CELULAR;
+- aparelho celular com dimensões maiores que o limite = DESCARTADO;
+- aparelho celular sem medida física localizada = DESCARTADO, exceto quando houver indício forte de mini celular.
 """
 
 from __future__ import annotations
@@ -21,9 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-
-LIMITE_DIMENSAO_IRREGULAR_MM = 80.0
-LIMITE_DIMENSAO_SUSPEITA_MM = 90.0
+LIMITE_ALTURA_MM = 120.0
+LIMITE_LARGURA_MM = 55.0
 
 TERMOS_TELEFONIA = [
     "dual sim", "single sim", "dois chips", "2 chips", "chip", "sim card",
@@ -40,9 +32,7 @@ TERMOS_TELEFONIA_FORTE = [
     "feature phone", "flip phone", "celular simples", "tijolinho",
 ]
 
-TERMOS_INDICIO_FORTE_MENOR_80MM = [
-    # Termos/modelos usados para manter em suspeitos quando a Americanas não exibe dimensão física.
-    # Não inclui apenas "mini", pois isso gera falso positivo em iPhone 13 Mini, Twist Mini etc.
+TERMOS_INDICIO_FORTE_MINI = [
     "mini celular", "mini telefone", "mini mobile", "mini phone", "mini cellphone",
     "menor celular", "menor telefone", "smallest phone", "tiny phone", "micro celular",
     "card phone", "bluetooth dialer", "discador bluetooth", "ponto eletrônico",
@@ -78,7 +68,6 @@ PADROES_ANATEL = [
     re.compile(r"\bANATEL\b[^\d]{0,45}(\d{8,13})", re.IGNORECASE),
     re.compile(r"\b(\d{5}[-\s]?\d{2}[-\s]?\d{4})\b"),
 ]
-
 
 @dataclass
 class Classificacao:
@@ -133,7 +122,6 @@ class Classificacao:
             "comprimento_mm": self.comprimento_mm,
         }
 
-
 def normalizar_texto(valor: Any) -> str:
     if valor is None:
         return ""
@@ -141,14 +129,11 @@ def normalizar_texto(valor: Any) -> str:
     texto = re.sub(r"\s+", " ", texto)
     return texto.strip()
 
-
 def contem_termo(texto_lower: str, termos: List[str]) -> List[str]:
     return [termo for termo in termos if termo.lower() in texto_lower]
 
-
 def _parse_numero(num: str) -> float:
     return float(num.replace(",", "."))
-
 
 def _formatar_num(valor: float) -> str:
     valor = round(float(valor), 2)
@@ -156,13 +141,11 @@ def _formatar_num(valor: float) -> str:
         return str(int(valor))
     return str(valor).replace(".", ",")
 
-
 def _para_mm(valor: float, unidade: str) -> float:
     unidade = unidade.lower().strip()
     if unidade in ["cm", "centimetro", "centimetros", "centímetro", "centímetros"]:
         return valor * 10.0
     return valor
-
 
 def extrair_codigo_anatel(texto: str) -> str:
     texto = normalizar_texto(texto)
@@ -173,12 +156,10 @@ def extrair_codigo_anatel(texto: str) -> str:
                 return codigo
     return ""
 
-
 def _contexto_match(texto: str, inicio: int, fim: int, margem: int = 85) -> str:
     ini = max(0, inicio - margem)
     fim2 = min(len(texto), fim + margem)
     return normalizar_texto(texto[ini:fim2])
-
 
 def _contexto_eh_dimensao_fisica(contexto_lower: str) -> bool:
     termos_dimensao = [
@@ -188,9 +169,7 @@ def _contexto_eh_dimensao_fisica(contexto_lower: str) -> bool:
     ]
     return any(t in contexto_lower for t in termos_dimensao)
 
-
 def extrair_tela_polegadas(*textos: str) -> Tuple[str, Optional[float], bool, bool, bool]:
-    """Extrai tela só como dado auxiliar; a decisão atual é por dimensão física."""
     numero = r"(\d{1,2}(?:[\.,]\d{1,2})?)"
     unidade = r"(?:\"|''|polegadas?|pol\.?|inch|inches|in\.?)"
     padroes = [
@@ -235,7 +214,6 @@ def extrair_tela_polegadas(*textos: str) -> Tuple[str, Optional[float], bool, bo
     valor = round(valor, 2)
     return contexto or trecho, valor, valor <= 3.0, 3.0 < valor <= 3.5, valor > 3.5
 
-
 def _parece_medida_valida(valores_mm: List[float]) -> bool:
     if not valores_mm:
         return False
@@ -246,7 +224,6 @@ def _parece_medida_valida(valores_mm: List[float]) -> bool:
     if len(valores_mm) >= 3 and menor < 3:
         return False
     return True
-
 
 def _extrair_dimensoes_grupo(texto: str, prioridade: int) -> List[Dict[str, Any]]:
     candidatos: List[Dict[str, Any]] = []
@@ -281,13 +258,7 @@ def _extrair_dimensoes_grupo(texto: str, prioridade: int) -> List[Dict[str, Any]
         })
     return candidatos
 
-
 def _extrair_dimensoes_rotuladas(texto: str, prioridade: int) -> List[Dict[str, Any]]:
-    """
-    Captura medidas rotuladas. Para classificar, usa altura/comprimento/length.
-    Não usa largura isolada como dimensão principal, porque quase todo celular tem
-    largura menor que 80 mm.
-    """
     candidatos: List[Dict[str, Any]] = []
     numero = r"(\d{1,3}(?:[\.,]\d{1,2})?)"
     unidade = r"(?:mm|mil[ií]metros?|cm|cent[ií]metros?)"
@@ -312,7 +283,6 @@ def _extrair_dimensoes_rotuladas(texto: str, prioridade: int) -> List[Dict[str, 
     contexto_unificado: List[str] = []
     primeira_pos = 10**9
 
-    # Ex.: Altura 12,4 cm / Height: 124 mm
     padrao_valor_unidade = re.compile(
         rf"\b(altura|comprimento|profundidade|height|length|largura|width)\b[^\d\|]{{0,55}}?{numero}\s*({unidade})\b",
         re.IGNORECASE,
@@ -321,7 +291,6 @@ def _extrair_dimensoes_rotuladas(texto: str, prioridade: int) -> List[Dict[str, 
         primeira_pos = min(primeira_pos, m.start())
         aplicar_medida(m.group(1), m.group(2), m.group(3), m.start(), m.end(), encontrados, contexto_unificado)
 
-    # Ex.: Altura do produto (cm) 12,4 / Largura (mm): 56
     padrao_unidade_no_rotulo = re.compile(
         rf"\b(altura|comprimento|profundidade|height|length|largura|width)\b[^\n\r\|:]{{0,80}}?\(({unidade})\)[^\d]{{0,35}}{numero}\b",
         re.IGNORECASE,
@@ -349,7 +318,6 @@ def _extrair_dimensoes_rotuladas(texto: str, prioridade: int) -> List[Dict[str, 
             })
     return candidatos
 
-
 def extrair_medida_fisica_mm(*textos: str) -> Dict[str, Any]:
     candidatos: List[Dict[str, Any]] = []
     for prioridade, texto in enumerate(textos):
@@ -369,7 +337,6 @@ def extrair_medida_fisica_mm(*textos: str) -> Dict[str, Any]:
         "largura_mm": melhor.get("largura_mm"),
         "comprimento_mm": melhor.get("comprimento_mm"),
     }
-
 
 def _classificacao_base(
     *,
@@ -413,14 +380,13 @@ def _classificacao_base(
         medidas_extraidas=medidas_extraidas,
         altura_cm=altura_cm,
         largura_cm=largura_cm,
-        medida_proxima_ou_menor=bool(maior_dimensao_mm is not None and maior_dimensao_mm <= LIMITE_DIMENSAO_SUSPEITA_MM),
+        medida_proxima_ou_menor=bool(maior_dimensao_mm is not None and maior_dimensao_mm <= LIMITE_ALTURA_MM),
         sem_medidas=maior_dimensao_mm is None,
         maior_dimensao_mm=maior_dimensao_mm,
         altura_mm=altura_mm,
         largura_mm=largura_mm,
         comprimento_mm=comprimento_mm,
     )
-
 
 def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
     titulo = normalizar_texto(produto.get("titulo"))
@@ -437,7 +403,7 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
     termos_fora_escopo = contem_termo(texto_focado_lower, TERMOS_PRODUTO_FORA_DO_ESCOPO)
     termos_tel = contem_termo(texto_focado_lower, TERMOS_TELEFONIA)
     termos_tel_forte = contem_termo(texto_focado_lower, TERMOS_TELEFONIA_FORTE)
-    termos_indicio_forte_menor_80 = contem_termo(texto_focado_lower, TERMOS_INDICIO_FORTE_MENOR_80MM)
+    termos_indicio_forte_mini = contem_termo(texto_focado_lower, TERMOS_INDICIO_FORTE_MINI)
     termos_acessorio = contem_termo(titulo_lower, TERMOS_ACESSORIO)
     termos_brinquedo = contem_termo(texto_focado_lower, TERMOS_BRINQUEDO)
     termos_aparelho_no_titulo = contem_termo(
@@ -502,18 +468,16 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
         evidencias.append(f"ANATEL: {codigo_anatel}")
 
     if maior_dimensao_mm is None:
-        if termos_indicio_forte_menor_80:
-            evidencias.extend(termos_indicio_forte_menor_80[:6])
+        if termos_indicio_forte_mini:
+            evidencias.extend(termos_indicio_forte_mini[:6])
             return _classificacao_base(
-                status="SUSPEITO",
-                categoria_print="suspeitos",
-                motivos=[
-                    "Medida física não localizada, mas há indício forte de mini celular possivelmente menor que 80 mm."
-                ],
+                status="MINI CELULAR",
+                categoria_print="mini_celulares/sem_medida_indicio_forte",
+                motivos=["Medida física não localizada, mas há indício forte de mini celular."],
                 evidencias=evidencias,
-                eh_mini_celular=False,
+                eh_mini_celular=True,
                 eh_acessorio=False,
-                regra="sem_medida_com_indicio_forte_menor_80mm",
+                regra="sem_medida_com_indicio_forte_mini",
                 medidas_extraidas="",
                 maior_dimensao_mm=None,
                 altura_mm=None,
@@ -522,8 +486,8 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
                 codigo_anatel=codigo_anatel,
                 tela_txt=tela_txt,
                 tela_pol=tela_pol,
-                tela_mini=False,
-                tela_suspeita=True,
+                tela_mini=True,
+                tela_suspeita=False,
                 tela_grande=False,
                 sem_tela=tela_pol is None,
             )
@@ -531,9 +495,7 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
         return _classificacao_base(
             status="DESCARTADO",
             categoria_print="",
-            motivos=[
-                "Aparelho celular sem medida física capturada e sem indício forte de dimensões menores que 80 mm."
-            ],
+            motivos=["Aparelho celular sem medida física capturada e sem indício forte de mini celular."],
             evidencias=evidencias,
             eh_mini_celular=False,
             eh_acessorio=False,
@@ -552,26 +514,52 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
             sem_tela=tela_pol is None,
         )
 
-    if maior_dimensao_mm <= LIMITE_DIMENSAO_IRREGULAR_MM:
-        motivos = [f"Maior dimensão física capturada: {_formatar_num(maior_dimensao_mm)} mm, igual ou inferior a 80 mm."]
+    # Verifica o novo limite de 120x55 mm
+    eh_mini = False
+    if altura_mm is not None and largura_mm is not None:
+        if altura_mm <= LIMITE_ALTURA_MM and largura_mm <= LIMITE_LARGURA_MM:
+            eh_mini = True
+    elif maior_dimensao_mm is not None:
+        # Fallback de segurança caso a extração não tenha separado a largura
+        if maior_dimensao_mm <= LIMITE_ALTURA_MM:
+            eh_mini = True
+
+    if eh_mini:
+        motivos = [f"Dimensões capturadas dentro do limite: Altura {_formatar_num(altura_mm) if altura_mm else _formatar_num(maior_dimensao_mm)} mm, Largura {_formatar_num(largura_mm) if largura_mm else 'N/A'} mm."]
         if not codigo_anatel:
             motivos.append("Código ANATEL não identificado no anúncio.")
-        return _classificacao_base(status="IRREGULAR", categoria_print="irregulares/menor_80mm", motivos=motivos, evidencias=evidencias, eh_mini_celular=True, eh_acessorio=False, regra="maior_dimensao_igual_ou_inferior_80mm", codigo_anatel=codigo_anatel, tela_txt=tela_txt, tela_pol=tela_pol, tela_mini=True, tela_suspeita=False, tela_grande=False, sem_tela=tela_pol is None, medidas_extraidas=medidas_extraidas, maior_dimensao_mm=maior_dimensao_mm, altura_mm=altura_mm, largura_mm=largura_mm, comprimento_mm=comprimento_mm)
+        
+        return _classificacao_base(
+            status="MINI CELULAR", 
+            categoria_print="mini_celulares/separados", 
+            motivos=motivos, 
+            evidencias=evidencias, 
+            eh_mini_celular=True, 
+            eh_acessorio=False, 
+            regra="dimensao_inferior_120x55", 
+            codigo_anatel=codigo_anatel, 
+            tela_txt=tela_txt, 
+            tela_pol=tela_pol, 
+            tela_mini=True, 
+            tela_suspeita=False, 
+            tela_grande=False, 
+            sem_tela=tela_pol is None, 
+            medidas_extraidas=medidas_extraidas, 
+            maior_dimensao_mm=maior_dimensao_mm, 
+            altura_mm=altura_mm, 
+            largura_mm=largura_mm, 
+            comprimento_mm=comprimento_mm
+        )
 
-    if maior_dimensao_mm <= LIMITE_DIMENSAO_SUSPEITA_MM:
-        motivos = [f"Maior dimensão física capturada: {_formatar_num(maior_dimensao_mm)} mm, próxima de 80 mm."]
-        if not codigo_anatel:
-            motivos.append("Código ANATEL não identificado no anúncio.")
-        return _classificacao_base(status="SUSPEITO", categoria_print="suspeitos", motivos=motivos, evidencias=evidencias, eh_mini_celular=False, eh_acessorio=False, regra="maior_dimensao_acima_80_ate_90mm_suspeito", codigo_anatel=codigo_anatel, tela_txt=tela_txt, tela_pol=tela_pol, tela_mini=False, tela_suspeita=True, tela_grande=False, sem_tela=tela_pol is None, medidas_extraidas=medidas_extraidas, maior_dimensao_mm=maior_dimensao_mm, altura_mm=altura_mm, largura_mm=largura_mm, comprimento_mm=comprimento_mm)
-
+    # Se passar do limite, descarta automaticamente
     return _classificacao_base(
         status="DESCARTADO",
         categoria_print="",
-        motivos=[f"Maior dimensão física capturada: {_formatar_num(maior_dimensao_mm)} mm, acima do limite de 90 mm."],
+        motivos=[f"Aparelho excede o limite de mini celular (120x55 mm). Maior dimensão: {_formatar_num(maior_dimensao_mm)} mm."],
         evidencias=evidencias,
         eh_mini_celular=False,
         eh_acessorio=False,
-        regra="maior_dimensao_acima_90mm",
+        regra="acima_do_limite_120x55",
         codigo_anatel=codigo_anatel,
         tela_txt=tela_txt,
         tela_pol=tela_pol,

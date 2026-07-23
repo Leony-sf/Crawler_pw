@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright, BrowserContext, Page, Timeout
 
 from classificacao_americanas import classificar_produto
 from extracao_americanas import coletar_links_resultados, esperar_carregamento, extrair_produto, fechar_popups_basicos
-from utils_americanas import agora_iso, carregar_termos_busca, escrever_resumo_txt, montar_url_busca, preparar_saida, slugify
+from utils_americanas import agora_iso, carregar_termos_busca, montar_url_busca, preparar_saida, slugify, escrever_resumo_txt
 
 
 @dataclass
@@ -52,8 +52,6 @@ async def executar_crawler_americanas(config: ConfigAmericanas) -> List[Dict[str
             print("\n[LOGIN] Resolva CEP/login/captcha/verificação no navegador, se aparecer.")
             input("        Pressione ENTER aqui no terminal para iniciar a coleta...")
 
-        # Ordem correta: página 1 linha 1 -> página 1 linha 2 -> página 1 linha 3...
-        # Depois página 2 linha 1, se --max-paginas for maior que 1.
         for pagina in range(1, config.max_paginas + 1):
             if total_analisados >= config.limit:
                 break
@@ -118,7 +116,6 @@ async def executar_crawler_americanas(config: ConfigAmericanas) -> List[Dict[str
 
 
 async def _abrir_busca_e_coletar(page: Page, config: ConfigAmericanas, termo: str, pagina: int) -> List[Dict[str, Any]]:
-    # Tenta formatos diferentes, porque a Americanas varia a renderização da busca.
     for modo in ["s", "busca"]:
         try:
             url_busca = montar_url_busca(termo, pagina, modo=modo)
@@ -309,7 +306,7 @@ def _salvar_parquets_incrementais(resultados: List[Dict[str, Any]], saida: Path)
     df.to_parquet(saida / "products.parquet", index=False)
     suspeitos = pd.DataFrame()
     if "status" in df.columns:
-        suspeitos = df[df["status"].isin(["SUSPEITO", "REVISAR"])].copy()
+        suspeitos = df[df["status"].isin(["MINI CELULAR", "SUSPEITO", "REVISAR"])].copy()
     pasta_suspeitos = saida / "suspeitos"
     pasta_suspeitos.mkdir(parents=True, exist_ok=True)
     caminho_suspeitos = pasta_suspeitos / "suspeitos.parquet"
@@ -322,29 +319,27 @@ def _salvar_parquets_incrementais(resultados: List[Dict[str, Any]], saida: Path)
 def _salvar_resumo(resultados: List[Dict[str, Any]], config: ConfigAmericanas, termos: List[str], total_cards: int, total_descartados: int, total_erros: int, total_analisados: int) -> None:
     df = pd.DataFrame(resultados)
     qtd_sem_medidas = 0
-    qtd_irregulares_dimensao = 0
-    qtd_suspeitos_dimensao = 0
+    qtd_mini_celular = 0
+    
     if not df.empty:
         if "sem_medidas" in df.columns:
-            qtd_sem_medidas = int(((df["sem_medidas"] == True) & (df["status"].isin(["SUSPEITO", "REVISAR"]))).sum())  # noqa: E712
+            qtd_sem_medidas = int(((df["sem_medidas"] == True) & (df["status"].isin(["MINI CELULAR", "SUSPEITO", "REVISAR"]))).sum())  # noqa: E712
         if "status" in df.columns:
-            qtd_irregulares_dimensao = int((df["status"] == "IRREGULAR").sum())
-            qtd_suspeitos_dimensao = int((df["status"] == "SUSPEITO").sum())
+            qtd_mini_celular = int((df["status"] == "MINI CELULAR").sum())
 
     linhas = [
         "Resumo da coleta Americanas.com",
         "===============================",
         f"Data/hora: {agora_iso()}",
-        "Regra aplicada: celular com maior dimensão física <= 80 mm = IRREGULAR; acima de 80 até 90 mm = SUSPEITO",
+        "Regra aplicada: celular com altura <= 120 mm e largura <= 55 mm = MINI CELULAR;",
         f"Termos de busca: {', '.join(termos)}",
         f"Páginas por termo: {config.max_paginas}",
         f"Limite configurado: {config.limit}",
         f"Produtos analisados nesta execução: {total_analisados}",
         f"Links candidatos em páginas de busca: {total_cards}",
         f"Registros salvos no products.parquet: {len(resultados)}",
-        f"Irregulares por dimensão <= 80 mm: {qtd_irregulares_dimensao}",
-        f"Suspeitos por dimensão próxima (>80 até 90 mm): {qtd_suspeitos_dimensao}",
-        f"Sem medida mantidos como suspeitos/revisão: {qtd_sem_medidas}",
+        f"Mini celulares (<= 120x55 mm): {qtd_mini_celular}",
+        f"Sem medida mantidos por indício: {qtd_sem_medidas}",
         f"Descartados não salvos: {total_descartados if not config.salvar_descartados else 0}",
         f"Erros/timeout: {total_erros}",
         "",
@@ -367,13 +362,12 @@ def _salvar_resumo(resultados: List[Dict[str, Any]], config: ConfigAmericanas, t
         "- products.parquet",
         "- suspeitos/suspeitos.parquet, quando houver",
         "- resumo.txt",
-        "- prints/irregulares/menor_80mm/",
-        "- prints/suspeitos/",
+        "- prints/mini_celulares/separados/",
+        "- prints/mini_celulares/sem_medida_indicio_forte/",
         "",
         "Observação:",
         "- CSV, JSON e comentários não são gerados nesta versão.",
-        "- Celulares com maior dimensão física acima de 90 mm são descartados.",
-        "- Termo 'mini' sozinho não classifica como irregular; a decisão principal é a maior dimensão física do aparelho.",
+        "- Aparelhos maiores que os limites 120x55 mm são descartados.",
     ])
     escrever_resumo_txt(config.saida, linhas)
 
@@ -383,7 +377,7 @@ def _imprimir_cabecalho(config: ConfigAmericanas, termos: List[str]) -> None:
     print(f"Termos: {len(termos)} | Páginas/termo: {config.max_paginas} | Limite: {config.limit}")
     print(f"Saída: {config.saida.resolve()}")
     print("Arquivos: products.parquet + suspeitos/suspeitos.parquet")
-    print("Filtro : dimensão <= 80 mm = IRREGULAR; > 80 até 90 mm = SUSPEITO; > 90 mm = DESCARTADO")
+    print("Filtro : altura <= 120 mm e largura <= 55 mm = MINI CELULAR")
 
 
 def _imprimir_secao(titulo: str) -> None:
@@ -399,10 +393,15 @@ def _imprimir_produto(registro: Dict[str, Any], numero: int, limite: int, item: 
     titulo = _texto_curto(registro.get("titulo") or registro.get("url_canonica", ""), 86)
     motivo = _texto_curto(registro.get("motivo", ""), 110)
     maior_dim = registro.get("maior_dimensao_mm", None)
-    print(f"[{numero:03d}/{limite}] {status:<10} | {categoria_curta:<18} | item {item}/{total_itens}")
+    altura = registro.get("altura_mm", None)
+    largura = registro.get("largura_mm", None)
+
+    print(f"[{numero:03d}/{limite}] {status:<12} | {categoria_curta:<20} | item {item}/{total_itens}")
     if titulo:
         print(f"        Título   : {titulo}")
-    if maior_dim not in (None, ""):
+    if altura and largura:
+        print(f"        Dimensão : Altura {altura} mm / Largura {largura} mm")
+    elif maior_dim not in (None, ""):
         print(f"        Dimensão : maior dimensão {maior_dim} mm")
     else:
         print("        Dimensão : não localizada")
@@ -413,20 +412,19 @@ def _imprimir_produto(registro: Dict[str, Any], numero: int, limite: int, item: 
 def _imprimir_final(resultados: List[Dict[str, Any]], config: ConfigAmericanas, total_descartados: int, total_erros: int, total_analisados: int) -> None:
     df = pd.DataFrame(resultados)
     qtd_sem_medidas = 0
-    qtd_irregulares = 0
-    qtd_suspeitos = 0
+    qtd_mini_celular = 0
+    
     if not df.empty:
         if "sem_medidas" in df.columns:
-            qtd_sem_medidas = int(((df["sem_medidas"] == True) & (df["status"].isin(["SUSPEITO", "REVISAR"]))).sum())  # noqa: E712
+            qtd_sem_medidas = int(((df["sem_medidas"] == True) & (df["status"].isin(["MINI CELULAR", "SUSPEITO", "REVISAR"]))).sum())  # noqa: E712
         if "status" in df.columns:
-            qtd_irregulares = int((df["status"] == "IRREGULAR").sum())
-            qtd_suspeitos = int((df["status"] == "SUSPEITO").sum())
+            qtd_mini_celular = int((df["status"] == "MINI CELULAR").sum())
+            
     _imprimir_secao("FINALIZADO")
     print(f"Produtos analisados: {total_analisados}/{config.limit}")
     print(f"Registros no products.parquet: {len(resultados)}")
-    print(f"Irregulares por dimensão <= 80 mm: {qtd_irregulares}")
-    print(f"Suspeitos por dimensão > 80 e <= 90 mm: {qtd_suspeitos}")
-    print(f"Sem medida mantidos como suspeitos/revisão: {qtd_sem_medidas}")
+    print(f"Mini celulares (<= 120x55 mm): {qtd_mini_celular}")
+    print(f"Sem medida mantidos por indício: {qtd_sem_medidas}")
     print(f"Descartados não salvos: {total_descartados if not config.salvar_descartados else 0}")
     print(f"Erros/timeout: {total_erros}")
     print(f"Pasta de saída: {config.saida.resolve()}")
