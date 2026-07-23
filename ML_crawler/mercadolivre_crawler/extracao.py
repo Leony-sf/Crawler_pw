@@ -189,7 +189,7 @@ TERMOS_ACESSORIOS = [
     "adaptador", "microfone", "drone", "brinquedo", "jogo", "aquaplay",
     "tampa para", "tampa de", "borne", "vareta", "carcaça", "jumper", "motor", "calha", "batom","lip",
     "balm", "jumper","tampa","monitor", "protetor", "kit", "manutencao", "manutenção", 
-    "milho", "rolo", "rolos"
+    "milho", "rolo", "rolos", "batedeira", "lanterna", "bloco"
 ]
 
 TERMOS_ALVOS_CLAROS = [
