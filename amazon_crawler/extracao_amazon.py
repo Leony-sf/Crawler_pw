@@ -1401,7 +1401,7 @@ def _detectar_suspeito_manual_amazon(texto_identificacao_norm: str, titulo_norm:
 
 def analisar_mini_celular_amazon(
     dados: DadosProduto,
-    maior_max_cm: float = 8.5,
+    maior_max_cm: float = 12.0,
     largura_max_cm: float = 5.5,
 ) -> dict[str, Any]:
     """Classifica o produto Amazon no recorte de mini celulares.

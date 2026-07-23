@@ -177,12 +177,16 @@ async def rolar_pagina(page, passos: int = 5, pausa: float = 0.6) -> None:
 
 
 def salvar_tabelas(base: Path, produtos: List[Dict[str, Any]]) -> None:
-    """Salva apenas products.parquet.
-
-    Não gera CSV e não gera arquivo de comentários.
-    """
+    """Salva apenas products.parquet filtrando apenas o que importa."""
     base.mkdir(parents=True, exist_ok=True)
-    df_produtos = pd.DataFrame(produtos)
+    
+    # Filtra para salvar APENAS os mini celulares (onde manter == True)
+    produtos_filtrados = [p for p in produtos if p.get("manter")]
+    
+    if not produtos_filtrados:
+        return  # Evita erro tentando salvar uma tabela vazia
+        
+    df_produtos = pd.DataFrame(produtos_filtrados)
 
     try:
         df_produtos.to_parquet(base / "products.parquet", index=False)

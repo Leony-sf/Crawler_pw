@@ -47,15 +47,24 @@ def main() -> None:
     args = parse_args()
     queries = ler_buscas(args.txt, args.query)
 
+    # AQUI ESTÁ A MÁGICA DA BUSCA GERAL
     if not queries:
         queries = [
-            "mini celular dual sim",
-            "mini phone sim card",
-            "bluetooth dialer mini phone",
-            "small mobile phone gsm",
-            "card phone dual sim",
+            "mini celular",
+            "celular pequeno",
+            "celular chave",
+            "celular formato chave",
+            "mini telefone",
+            "micro celular",
+            "tiny phone",
+            "small mobile phone",
+            "bluetooth dialer phone",
+            "mini smartphone",
+            "celular de bolso",
+            "mini phone gsm",
+            "celular dual sim pequeno"
         ]
-        print("[busca] Nenhum TXT/query encontrado. Usando buscas padrão de mini celulares.")
+        print("[busca] Nenhum TXT/query encontrado. Usando buscas padrão genéricas.")
 
     executar_sync(
         queries=queries,

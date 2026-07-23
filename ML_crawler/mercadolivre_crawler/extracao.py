@@ -8,19 +8,13 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from .base_anatel import BaseAnatel, normalizar_homologacao_base
 from .utils import apenas_alnum, bloco, gerar_id, log, normalizar_chave, normalizar_texto, remover_acentos
 
-
 LABELS_MODELO_VALIDAR = [
-    "Modelo",
-    "Modelo detalhado",
-    "Modelo alfanumérico",
-    "Modelo alfanumerico",
-    "Número do modelo",
-    "Numero do modelo",
+    "Modelo", "Modelo detalhado", "Modelo alfanumérico", "Modelo alfanumerico",
+    "Número do modelo", "Numero do modelo",
 ]
 
 LABELS_MODELO_IGNORAR = [
-    "Modelo do processador",
-    "Modelo de processador",
+    "Modelo do processador", "Modelo de processador",
 ]
 
 @dataclass
@@ -40,13 +34,10 @@ class DadosProduto:
     texto_relevante_mini: str = ""
     comentarios: list[str] | None = None
 
-
 def _click_suave(page: Page, locator_textos: list[str], timeout_ms: int = 1500) -> bool:
     for texto in locator_textos:
         seletores = [
-            f"button:has-text('{texto}')",
-            f"a:has-text('{texto}')",
-            f"span:has-text('{texto}')",
+            f"button:has-text('{texto}')", f"a:has-text('{texto}')", f"span:has-text('{texto}')",
         ]
         for sel in seletores:
             try:
@@ -62,26 +53,15 @@ def _click_suave(page: Page, locator_textos: list[str], timeout_ms: int = 1500) 
     return False
 
 def fechar_modais_leves(page: Page) -> None:
-    textos = [
-        "Aceitar cookies",
-        "Entendi",
-        "Mais tarde",
-        "Agora não",
-        "Depois",
-        "Fechar",
-    ]
+    textos = ["Aceitar cookies", "Entendi", "Mais tarde", "Agora não", "Depois", "Fechar"]
     _click_suave(page, textos, timeout_ms=1000)
 
 def expandir_ficha_tecnica(page: Page) -> bool:
     textos = [
-        "Ver todas as características",
-        "Ver todas as caracteristicas",
-        "Ver características",
-        "Ver caracteristicas",
-        "Ver mais características",
-        "Ver mais caracteristicas",
-        "Ficha técnica",
-        "Ficha tecnica",
+        "Ver todas as características", "Ver todas as caracteristicas",
+        "Ver características", "Ver caracteristicas",
+        "Ver mais características", "Ver mais caracteristicas",
+        "Ficha técnica", "Ficha tecnica",
     ]
     for y in [0, 700, 1400, 2200, 3200]:
         try:
@@ -190,69 +170,36 @@ def extrair_codigo_anatel(page: Page, attrs: dict[str, str]) -> str:
                 return codigo
     return ""
 
-
 # ============================================================
-# MINI CELULARES / DIMENSÕES
+# MINI CELULARES: REGRAS SIMPLIFICADAS E DIRETAS
 # ============================================================
 
-TERMOS_MINI_CELULAR = [
-    "mini celular", "mini telefone", "mini phone", "celular pequeno",
-    "telefone pequeno", "celular compacto", "telefone compacto",
-    "celular chaveiro", "telefone chaveiro", "bluetooth dialer",
-    "dual sim", "2 chips", "dois chips", "aceita chip", "chip sim",
-    "cartao sim", "cartão sim",
+TERMOS_FALSO_POSITIVO = [
+    "redmi note", "poco x", "poco m", "poco f", "galaxy s", "galaxy a", "galaxy m", "galaxy z",
+    "moto g", "moto e", "moto edge", "iphone 11", "iphone 12", "iphone 13", "iphone 14",
+    "iphone 15", "iphone 16", "realme c", "infinix note", "infinix hot", "cubot kingkong"
 ]
 
-TERMOS_PRODUTO_CELULAR = [
-    "celular", "smartphone", "telefone", "phone", "dialer",
-    "dual sim", "chip", "sim card", "cartao sim", "cartão sim",
-    "galaxy", "iphone", "nokia", "motorola", "positivo",
-    "multilaser", "alcatel", "doogee", "umidigi",
+TERMOS_ACESSORIOS = [
+    "capinha", "capa", "case", "pelicula", "película", "carregador", "cabo usb",
+    "cabo tipo c", "fonte", "fone de", "fone bluetooth", "suporte", "tripé", "tripe",
+    "bateria para", "display para", "tela para", "placa para", "conector para", "flex para",
+    "slot para", "gaveta chip", "smartwatch", "relógio", "relogio", "tablet", "ipad",
+    "caixa de som", "alto falante", "speaker", "bolsa", "pochete", "adesivo", "projetor", 
+    "adaptador", "microfone", "drone", "brinquedo", "jogo", "aquaplay",
+    "tampa para", "tampa de", "borne", "vareta", "carcaça", "jumper", "motor", "calha", "batom","lip",
+    "balm", "jumper","tampa","monitor", "protetor", "kit", "manutencao", "manutenção", 
+    "milho", "rolo", "rolos"
 ]
 
-TERMOS_DESCARTAR_MINI = [
-    "capinha", "capa para", "capa compatível", "capa compativel",
-    "case para", "pelicula", "película", "carregador", "cabo usb",
-    "cabo tipo c", "fonte", "fone de ouvido", "suporte", "tripé",
-    "tripe", "bateria para", "display para", "tela para",
-    "frontal para", "placa para", "conector para", "flex para",
-    "slot para", "gaveta chip", "smartwatch", "relógio", "relogio",
-    "tablet",
-]
-
-MARCAS_SUSPEITAS_MINI = [
-    "l8star", "l8 star", "gtstar", "gt star", "zanco", "zanco tiny",
-    "servo", "servo phone", "anica", "aizku", "kechaoda", "soyes",
-    "melrose", "long-cz", "long cz",
-]
-
-MODELOS_SUSPEITOS_MINI = [
+TERMOS_ALVOS_CLAROS = [
     "bm10", "bm20", "bm30", "bm50", "bm70", "bm90", "bm100", "bm200", "bm310",
-    "bt11", "bt22", "b25", "b30", "j8", "j9", "j10", "k10", "k33", "k66",
-    "soyes s10", "soyes xs", "soyes 7s", "melrose s9", "melrose s10",
-    "long-cz j8", "long cz j8", "long-cz j9", "long cz j9",
+    "bt11", "bt22", "b25", "b30", "b68", "cat b68", "j8", "j9", "j10", "k10", "k33", "k66",
+    "soyes", "melrose", "long-cz", "zanco", "l8star", "anica",
+    "i17 pro", "i17 pro max", "i17promax", "i16 pro", "i15 pro", "i14 pro", "mini i17", "16pro",
+    "batom", "caneta", "isqueiro", "chaveiro", "chave de carro", "porsche", "bmw",
+    "cartao", "cartão", "card phone", "flip phone", "ventosa", "dobravel i17", "dobrável i17", "mini celular"
 ]
-
-TERMOS_FORMATO_DISFARCE_MINI = [
-    "batom", "batonzinho", "caneta", "pen phone", "isqueiro", "lighter phone",
-    "chaveiro", "chave de carro", "bmw", "porsche", "keyring phone",
-    "cartao", "cartão", "card phone", "key phone", "tamanho de cartao", "tamanho de cartão",
-]
-
-TERMOS_INDICIO_TERMINAL_MOVEL = [
-    "chip", "sim", "sim card", "cartao sim", "cartão sim", "gsm", "2g", "3g", "4g", "lte",
-    "imei", "sms", "ligacao", "ligação", "chamada", "dual sim", "dois chips", "2 chips",
-    "aceita chip", "bluetooth dialer", "dialer gsm", "phone companion",
-]
-
-MARCAS_CELULAR_CONHECIDAS = [
-    "apple", "iphone", "samsung", "galaxy", "motorola", "moto", "xiaomi", "redmi", "poco",
-    "nokia", "positivo", "multilaser", "multi", "alcatel", "doogee", "umidigi", "lg",
-    "asus", "zenfone", "realme", "oppo", "vivo", "huawei", "honor", "infinix", "tcl",
-]
-
-_ROTULO_DIM_MAIOR = ["altura", "comprimento", "diametro", "diâmetro"]
-_ROTULO_DIM_LARGURA = ["largura"]
 
 def _numero_ptbr_para_float(valor: object) -> float | None:
     txt = normalizar_texto(valor).replace(" ", "")
@@ -297,91 +244,6 @@ def _score_evidencia_dimensao(evidencia: object, maior_cm: float, largura_cm: fl
     if any(t in ev for t in ["frete", "r$", "parcela", "mercado livre", "produtos relacionados"]):
         prioridade += 2
     return (prioridade, float(maior_cm), float(largura_cm))
-
-def _coletar_texto_caracteristicas_produto(page: Page) -> str:
-    script = r"""
-    () => {
-      const out = [];
-      const seen = new Set();
-      function clean(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-      function push(s) {
-        s = clean(s);
-        if (!s || s.length < 20) return;
-        if (s.length > 5000) s = s.slice(0, 5000);
-        const key = s.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        out.push(s);
-      }
-      const tituloRegex = /caracter[ií]sticas do produto|caracter[ií]sticas principais|ficha t[eé]cnica|especifica[cç][oõ]es|detalhes do produto/i;
-      const candidatos = Array.from(document.querySelectorAll('section, article, div, h2, h3, h4'));
-      for (const el of candidatos) {
-        const txt = clean(el.innerText || el.textContent || '');
-        if (!tituloRegex.test(txt)) continue;
-        let alvo = el.closest('section, article') || el;
-        for (let i = 0; i < 4 && alvo; i++) {
-          const bloco = clean(alvo.innerText || alvo.textContent || '');
-          if (bloco.length >= 20 && bloco.length <= 5000) {
-            push(bloco);
-            break;
-          }
-          alvo = alvo.parentElement;
-        }
-      }
-      for (const sel of [
-        '.ui-pdp-highlighted-specs-res',
-        '.ui-pdp-specs',
-        '.ui-vpp-highlighted-specs',
-        '.ui-pdp-container__row--technical-specifications',
-        '[class*="highlighted-specs"]',
-        '[class*="technical-specifications"]'
-      ]) {
-        for (const el of document.querySelectorAll(sel)) {
-          push(el.innerText || el.textContent || '');
-        }
-      }
-      return out.slice(0, 8).join(' | ');
-    }
-    """
-    try:
-        return normalizar_texto(page.evaluate(script) or "")
-    except Exception:
-        return ""
-
-def _extrair_texto_relevante_mini(page: Page, attrs: dict[str, str], titulo: str) -> str:
-    partes: list[str] = [normalizar_texto(titulo)]
-    bloco_caracteristicas = _coletar_texto_caracteristicas_produto(page)
-    if bloco_caracteristicas:
-        partes.append(f"Características do produto: {bloco_caracteristicas}")
-    for chave, valor in attrs.items():
-        chave_norm = normalizar_chave(chave)
-        if any(t in chave_norm for t in [
-            "dimens", "tamanho", "altura", "largura", "comprimento", "diametro", "medida",
-            "tela", "display", "formato", "peso"
-        ]):
-            partes.append(f"{chave}: {valor}")
-    try:
-        body = page.locator("body").inner_text(timeout=2500)
-    except Exception:
-        body = ""
-    body_norm = normalizar_texto(body)
-    body_sem_acento = remover_acentos(body_norm)
-    termos = [
-        "caracteristicas do produto", "ficha tecnica", "dimens", "tamanho", "altura", "largura",
-        "comprimento", "diametro", "medida", " cm", " mm"
-    ]
-    trechos: list[str] = []
-    for termo in termos:
-        for m in re.finditer(re.escape(termo), body_sem_acento, flags=re.IGNORECASE):
-            trecho = _janela_texto(body_norm, m.start(), m.end(), margem=220)
-            if trecho and trecho not in trechos:
-                trechos.append(trecho)
-            if len(trechos) >= 10:
-                break
-        if len(trechos) >= 10:
-            break
-    partes.extend(trechos)
-    return normalizar_texto(" | ".join(p for p in partes if p))[:7000]
 
 def _extrair_dimensao_por_multiplicacao(texto: str) -> dict[str, Any] | None:
     padrao = re.compile(
@@ -511,27 +373,6 @@ def _termo_presente(texto_norm: str, termo: str) -> bool:
     padrao = r"(?<![a-z0-9])" + re.escape(termo_norm) + r"(?![a-z0-9])"
     return re.search(padrao, texto_norm, flags=re.IGNORECASE) is not None
 
-def _qualquer_termo_presente(texto_norm: str, termos: list[str]) -> bool:
-    return any(_termo_presente(texto_norm, termo) for termo in termos)
-
-def _primeiro_termo_presente(texto_norm: str, termos: list[str]) -> str:
-    return next((termo for termo in termos if _termo_presente(texto_norm, termo)), "")
-
-def _normalizar_marca_para_suspeito(valor: object) -> str:
-    return remover_acentos(valor or "")
-
-def _marca_desconhecida_ou_generica(marca: str) -> bool:
-    marca_norm = _normalizar_marca_para_suspeito(marca)
-    if not marca_norm:
-        return True
-    genericos = [
-        "generico", "generica", "sem marca", "marca generica", "marca nao informada",
-        "nao informado", "nao informada", "outro", "outros", "importado", "unbranded",
-    ]
-    if any(g in marca_norm for g in genericos):
-        return True
-    return not _qualquer_termo_presente(marca_norm, MARCAS_CELULAR_CONHECIDAS)
-
 def _base_retorno_mini(maior_max_cm: float, largura_max_cm: float) -> dict[str, Any]:
     return {
         "mini_suspeito_manual": "NAO",
@@ -541,250 +382,90 @@ def _base_retorno_mini(maior_max_cm: float, largura_max_cm: float) -> dict[str, 
         "mini_limite_largura_cm": largura_max_cm,
     }
 
-def _retorno_suspeito_manual(
-    maior_max_cm: float, largura_max_cm: float, tipo: str, motivo: str, evidencia: str = ""
-) -> dict[str, Any]:
-    return {
-        "mini_status": "SUSPEITO_MANUAL",
-        "mini_motivo": f"Separado para análise manual: {motivo}",
-        "mini_maior_cm": None,
-        "mini_largura_cm": None,
-        "mini_espessura_cm": None,
-        "mini_evidencia": normalizar_texto(evidencia)[:900],
-        "mini_fonte_dimensao": "",
-        "mini_suspeito_manual": "SIM",
-        "mini_suspeito_tipo": tipo,
-        "mini_suspeito_motivo": motivo,
-        "mini_limite_maior_cm": maior_max_cm,
-        "mini_limite_largura_cm": largura_max_cm,
-    }
-
-def _avaliar_indicios_suspeitos_mini(
-    dados: DadosProduto, attrs_txt: str, texto_identificacao_norm: str, texto_total_norm: str
-) -> dict[str, str]:
-    termo_marca = _primeiro_termo_presente(texto_total_norm, MARCAS_SUSPEITAS_MINI)
-    termo_modelo = _primeiro_termo_presente(texto_total_norm, MODELOS_SUSPEITOS_MINI)
-    termo_disfarce = _primeiro_termo_presente(texto_total_norm, TERMOS_FORMATO_DISFARCE_MINI)
-    termo_terminal = _primeiro_termo_presente(texto_total_norm, TERMOS_INDICIO_TERMINAL_MOVEL)
-    
-    if termo_modelo:
-        return {
-            "tipo": "MODELO_SUSPEITO",
-            "motivo": f"modelo associado a mini phone encontrado: {termo_modelo}",
-        }
-    if termo_marca:
-        return {
-            "tipo": "MARCA_SUSPEITA",
-            "motivo": f"marca associada a mini phone encontrada: {termo_marca}",
-        }
-    if termo_disfarce and termo_terminal:
-        return {
-            "tipo": "FORMATO_DISFARCADO",
-            "motivo": f"formato/disfarce '{termo_disfarce}' com indício de terminal móvel '{termo_terminal}'",
-        }
-    marca = normalizar_texto(dados.marca)
-    if _marca_desconhecida_ou_generica(marca) and termo_terminal and _qualquer_termo_presente(texto_identificacao_norm, TERMOS_PRODUTO_CELULAR + TERMOS_MINI_CELULAR):
-        return {
-            "tipo": "MARCA_DESCONHECIDA",
-            "motivo": f"marca ausente/desconhecida com indício técnico de celular: {termo_terminal}",
-        }
-    return {"tipo": "", "motivo": ""}
-
-def _segmentos_dimensoes_prioritarios(dados: DadosProduto, attrs_txt: str) -> list[str]:
-    saida: list[str] = []
-    vistos: set[str] = set()
-    def add(txt: object) -> None:
-        txt_norm = normalizar_texto(txt)
-        if not txt_norm: return
-        chave = remover_acentos(txt_norm)
-        if chave in vistos: return
-        vistos.add(chave)
-        saida.append(txt_norm)
-        
-    texto_relevante = normalizar_texto(dados.texto_relevante_mini)
-    partes_relevantes = [normalizar_texto(p) for p in re.split(r"\s+\|\s+", texto_relevante) if normalizar_texto(p)]
-    marcadores_prioridade = [
-        "caracteristicas do produto", "caracteristicas principais", "ficha tecnica",
-        "especificacoes", "detalhes do produto", "tamanho da tela", "dimens",
-        "altura", "largura", "comprimento", "diametro",
-    ]
-    for parte in partes_relevantes:
-        parte_norm = remover_acentos(parte)
-        if any(m in parte_norm for m in marcadores_prioridade):
-            add(parte)
-            
-    try:
-        attrs = json.loads(dados.atributos_json or "{}")
-    except Exception:
-        attrs = {}
-    if isinstance(attrs, dict):
-        for chave, valor in attrs.items():
-            chave_norm = normalizar_chave(chave)
-            if any(t in chave_norm for t in ["dimens", "tamanho", "altura", "largura", "comprimento", "diametro", "medida"]):
-                add(f"{chave}: {valor}")
-                
-    add(texto_relevante)
-    add(dados.titulo)
-    return saida
-
-def _extrair_dimensoes_por_prioridade(dados: DadosProduto, attrs_txt: str) -> dict[str, Any] | None:
-    for fonte in _segmentos_dimensoes_prioritarios(dados, attrs_txt):
-        dim = extrair_dimensoes_mini_celular(fonte)
-        if dim:
-            dim = dict(dim)
-            dim["fonte_prioridade"] = fonte[:350]
-            return dim
-    return None
-
 def analisar_mini_celular(
     dados: DadosProduto,
     maior_max_cm: float = 8.5,
     largura_max_cm: float = 5.5,
 ) -> dict[str, Any]:
-    """Classifica o anúncio dentro do recorte de mini celulares.
-    - Acessórios vão direto para o lixo.
-    - Disfarces (chaveiros, etc) com indício de celular viram MANTER imediatamente.
-    """
+    """A nova lógica simplificada de captura."""
+    
+    texto_titulo_norm = remover_acentos(normalizar_texto(dados.titulo))
+    texto_id_norm = remover_acentos(normalizar_texto(f"{dados.titulo} {dados.marca} {dados.modelo}"))
+    extras_base = _base_retorno_mini(maior_max_cm, largura_max_cm)
+
+    # 1. PENEIRA DE PREÇO (Entre R$ 30 e R$ 900)
+    preco_num = _numero_ptbr_para_float(dados.preco)
+    if preco_num is not None:
+        if preco_num > 900.0:
+            return {**extras_base, "mini_status": "DESCARTAR_PRECO_ALTO", "mini_motivo": f"Preço R$ {preco_num} é alto demais para alvos", "mini_evidencia": f"R$ {dados.preco}"}
+        if preco_num < 30.0:
+            return {**extras_base, "mini_status": "DESCARTAR_PRECO_BAIXO", "mini_motivo": f"Preço R$ {preco_num} é baixo demais (golpe/peça)", "mini_evidencia": f"R$ {dados.preco}"}
+
+    # 2. DESCARTA ACESSÓRIOS (Capinhas, Fones, etc)
+    termo_acessorio = next((t for t in TERMOS_ACESSORIOS if _termo_presente(texto_titulo_norm, t)), "")
+    if termo_acessorio:
+        return {**extras_base, "mini_status": "DESCARTAR_ACESSORIO", "mini_motivo": f"É acessório: {termo_acessorio}", "mini_evidencia": ""}
+
+    # 3. ESCUDO ANTI-FALSO POSITIVO (Marcas famosas)
+    termo_fp = next((t for t in TERMOS_FALSO_POSITIVO if _termo_presente(texto_titulo_norm, t)), "")
+    if termo_fp:
+        return {**extras_base, "mini_status": "DESCARTAR_FALSO_POSITIVO", "mini_motivo": f"Celular comum de marca famosa: {termo_fp}", "mini_evidencia": ""}
+
+    # 4. CAPTURA ALVOS CRIMINOSOS EXPLÍCITOS (i17 pro, b68, ventosa...)
+    termo_alvo = next((t for t in TERMOS_ALVOS_CLAROS if _termo_presente(texto_id_norm, t)), "")
+    if termo_alvo:
+        return {
+            **extras_base,
+            "mini_status": "MANTER",
+            "mini_motivo": f"Alvo criminoso direto: {termo_alvo}",
+            "mini_suspeito_manual": "SIM",
+            "mini_suspeito_tipo": "ALVO_CONHECIDO",
+            "mini_suspeito_motivo": f"Encontrado termo alvo: {termo_alvo}",
+            "mini_evidencia": dados.titulo,
+        }
+
+    # 5. TESTE DE DIMENSÃO PARA OS RESTANTES
     attrs_txt = ""
     try:
         attrs = json.loads(dados.atributos_json or "{}")
         attrs_txt = " ".join(f"{k}: {v}" for k, v in attrs.items())
     except Exception:
         attrs_txt = dados.atributos_json or ""
+    
+    fontes_dimensao = [dados.titulo, attrs_txt, dados.texto_relevante_mini]
+    dimensoes = None
+    fonte_usada = ""
+    for fonte in fontes_dimensao:
+        dim = extrair_dimensoes_mini_celular(fonte)
+        if dim:
+            dimensoes = dim
+            fonte_usada = fonte[:200]
+            break
 
-    texto_titulo = normalizar_texto(dados.titulo)
-    texto_titulo_norm = remover_acentos(texto_titulo)
-    
-    texto_identificacao_restrita = normalizar_texto(" | ".join([
-        dados.titulo, dados.marca, dados.fabricante, dados.modelo,
-        dados.modelo_detalhado, dados.modelo_alfanumerico, dados.numero_modelo,
-    ]))
-    texto_identificacao_norm = remover_acentos(texto_identificacao_restrita)
-    
-    texto_total_norm = remover_acentos(" | ".join([
-        texto_identificacao_restrita, attrs_txt, dados.texto_relevante_mini,
-    ]))
-    
-    extras_base = _base_retorno_mini(maior_max_cm, largura_max_cm)
-    
-    suspeito = _avaliar_indicios_suspeitos_mini(
-        dados=dados,
-        attrs_txt=attrs_txt,
-        texto_identificacao_norm=texto_identificacao_norm,
-        texto_total_norm=texto_total_norm,
-    )
-    
-    termo_descartar = next((t for t in TERMOS_DESCARTAR_MINI if _termo_presente(texto_titulo_norm, t)), "")
-    termo_terminal = _primeiro_termo_presente(texto_total_norm, TERMOS_INDICIO_TERMINAL_MOVEL)
-    
-    # 1. DESCARTA ACESSÓRIOS SEM PIEDADE
-    if termo_descartar:
-        return {
-            **extras_base,
-            "mini_status": "DESCARTAR_ACESSORIO",
-            "mini_motivo": f"Produto é acessório/peça: {termo_descartar}",
-            "mini_maior_cm": None,
-            "mini_largura_cm": None,
-            "mini_espessura_cm": None,
-            "mini_evidencia": "",
-            "mini_fonte_dimensao": "",
-        }
-
-    # 2. SE FOR DISFARCE E TIVER SINAL DE CELULAR, É ALVO COM CERTEZA (MANTER)
-    if suspeito.get("tipo") in ["FORMATO_DISFARCADO", "MODELO_SUSPEITO", "MARCA_SUSPEITA"]:
-        return {
-            **extras_base,
-            "mini_status": "MANTER",
-            "mini_motivo": f"Alvo criminoso detectado por formato disfarçado, marca ou modelo sujo: {suspeito.get('motivo')}",
-            "mini_maior_cm": 0.0,
-            "mini_largura_cm": 0.0,
-            "mini_espessura_cm": 0.0,
-            "mini_evidencia": texto_identificacao_restrita[:900],
-            "mini_fonte_dimensao": "Regra de Disfarce Forçada",
-            "mini_suspeito_manual": "SIM",
-            "mini_suspeito_tipo": suspeito.get("tipo"),
-            "mini_suspeito_motivo": suspeito.get("motivo"),
-        }
-
-    parece_mini = _qualquer_termo_presente(texto_identificacao_norm, TERMOS_MINI_CELULAR)
-    parece_celular = parece_mini or _qualquer_termo_presente(texto_identificacao_norm, TERMOS_PRODUTO_CELULAR)
-    
-    if not parece_celular:
-        return {
-            **extras_base,
-            "mini_status": "DESCARTAR_NAO_CELULAR",
-            "mini_motivo": "Anúncio não possui indício textual suficiente de celular/telefone",
-            "mini_maior_cm": None,
-            "mini_largura_cm": None,
-            "mini_espessura_cm": None,
-            "mini_evidencia": "",
-            "mini_fonte_dimensao": "",
-        }
-
-    dimensoes = _extrair_dimensoes_por_prioridade(dados, attrs_txt)
-    
     if not dimensoes:
-        if suspeito.get("tipo"):
-            return _retorno_suspeito_manual(
-                maior_max_cm, largura_max_cm,
-                tipo=suspeito.get("tipo") or "SUSPEITO_SEM_MEDIDA",
-                motivo=(suspeito.get("motivo") or "parece mini celular") + "; sem dimensão",
-                evidencia=texto_identificacao_restrita or texto_titulo,
-            )
-        return {
-            **extras_base,
-            "mini_status": "REVISAR_SEM_MEDIDA" if parece_mini else "DESCARTAR_SEM_MEDIDA",
-            "mini_motivo": "Parece mini celular, mas não encontrei medida explícita" if parece_mini else "Sem medida explícita",
-            "mini_maior_cm": None,
-            "mini_largura_cm": None,
-            "mini_espessura_cm": None,
-            "mini_evidencia": "",
-            "mini_fonte_dimensao": "",
-        }
+        return {**extras_base, "mini_status": "DESCARTAR_SEM_MEDIDA", "mini_motivo": "Sem medida ou indício de alvo", "mini_evidencia": ""}
         
     maior = float(dimensoes.get("maior_cm") or 0)
     largura = float(dimensoes.get("largura_cm") or 0)
-    espessura = dimensoes.get("espessura_cm")
-    evidencia = dimensoes.get("evidencia") or ""
     
     if maior <= float(maior_max_cm) and largura <= float(largura_max_cm):
-        status = "MANTER"
-        motivo = f"Dentro do limite: maior eixo {_fmt_cm(maior)} cm <= {_fmt_cm(maior_max_cm)} cm e largura {_fmt_cm(largura)} cm <= {_fmt_cm(largura_max_cm)} cm"
-    else:
-        status = "DESCARTAR_MEDIDA"
-        motivo = f"Fora do limite: maior eixo {_fmt_cm(maior)} cm / largura {_fmt_cm(largura)} cm"
-        
-    extras_suspeito: dict[str, Any] = {}
-    if status == "MANTER" and suspeito.get("tipo"):
-        extras_suspeito = {
-            "mini_suspeito_manual": "SIM",
-            "mini_suspeito_tipo": suspeito.get("tipo") or "SUSPEITO",
-            "mini_suspeito_motivo": suspeito.get("motivo") or "produto mantido, mas com indício suspeito",
+        return {
+            **extras_base,
+            "mini_status": "MANTER",
+            "mini_motivo": f"Medidas confirmam mini celular: {_fmt_cm(maior)} x {_fmt_cm(largura)} cm",
+            "mini_maior_cm": maior,
+            "mini_largura_cm": largura,
+            "mini_evidencia": dimensoes.get("evidencia", ""),
+            "mini_fonte_dimensao": fonte_usada,
         }
-        
-    return {
-        **extras_base,
-        **extras_suspeito,
-        "mini_status": status,
-        "mini_motivo": motivo,
-        "mini_maior_cm": maior,
-        "mini_largura_cm": largura,
-        "mini_espessura_cm": float(espessura) if espessura is not None else None,
-        "mini_evidencia": evidencia,
-        "mini_fonte_dimensao": dimensoes.get("fonte_prioridade", ""),
-    }
+
+    return {**extras_base, "mini_status": "DESCARTAR_MEDIDA", "mini_motivo": f"Maior que o limite: {_fmt_cm(maior)} cm", "mini_evidencia": ""}
 
 def capturar_comentarios(page: Page, limite: int = 10) -> list[str]:
     bloco("comentários")
     log("comentários", f"Tentando capturar até {limite} comentários.")
     comentarios: list[str] = []
-    textos_botao = [
-        "Ver todas as opiniões",
-        "Ver opiniões",
-        "Opiniões",
-        "Ver avaliações",
-        "Avaliações",
-    ]
+    textos_botao = ["Ver todas as opiniões", "Ver opiniões", "Opiniões", "Ver avaliações", "Avaliações"]
     _click_suave(page, textos_botao, timeout_ms=1200)
     try:
         page.wait_for_timeout(1000)
@@ -840,7 +521,7 @@ def extrair_produto(page: Page, capturar_reviews: bool = True) -> DadosProduto:
     numero_modelo = _valor_por_labels(attrs, ["Número do modelo", "Numero do modelo"])
     codigo = extrair_codigo_anatel(page, attrs)
     codigo_norm = normalizar_homologacao_base(codigo) if codigo else ""
-    texto_relevante_mini = _extrair_texto_relevante_mini(page, attrs, titulo)
+    texto_relevante_mini = ""
     comentarios = capturar_comentarios(page, limite=10) if capturar_reviews else []
     return DadosProduto(
         url=page.url,
@@ -955,13 +636,6 @@ def _modelo_decisivo_capturado(dados: DadosProduto) -> tuple[str, str]:
 
 
 def validar_produto(dados: DadosProduto, base: BaseAnatel | None) -> dict[str, Any]:
-    """Valida APENAS código e marca contra a base ANATEL.
-    Regras atuais:
-    - sem código ANATEL => IRREGULAR;
-    - código fora da base e sem prefixo válido => IRREGULAR;
-    - marca capturada divergente da base => IRREGULAR;
-    (A validação de modelo foi removida a pedido do usuário).
-    """
     motivos_irreg: list[str] = []
     avisos: list[str] = []
     
@@ -997,7 +671,6 @@ def validar_produto(dados: DadosProduto, base: BaseAnatel | None) -> dict[str, A
     if modo == "prefixo":
         avisos.append(f"Código sem match exato, mas prefixo {pref} existe na base")
         
-    # Marca capturada x fabricante/marca da base.
     bloco("marca x base")
     if dados.marca:
         fabricantes = [normalizar_texto(v) for v in candidatos.get("fabricante_base", []).tolist() if normalizar_texto(v)]
@@ -1014,7 +687,6 @@ def validar_produto(dados: DadosProduto, base: BaseAnatel | None) -> dict[str, A
     else:
         avisos.append("Marca não capturada no anúncio")
         
-    # Validação de modelo removida - se a marca e o código baterem, é REGULAR.
     status = "IRREGULAR" if motivos_irreg else "REGULAR"
     return _resultado_validacao(status, motivos_irreg, avisos, modo_base=modo)
 

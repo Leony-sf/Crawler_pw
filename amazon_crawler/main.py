@@ -138,8 +138,8 @@ def parse_args() -> argparse.Namespace:
         "--mini-maior-eixo-cm",
         dest="mini_maior_cm",
         type=float,
-        default=8.5,
-        help="Maior dimensão/eixo permitido para mini celular em centímetros. Padrão: 8,5 cm.",
+        default=12.0,
+        help="Maior dimensão/eixo permitido para mini celular em centímetros. Padrão: 12,0 cm.",
     )
 
     parser.add_argument(

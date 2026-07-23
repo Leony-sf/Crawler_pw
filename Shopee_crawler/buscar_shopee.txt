@@ -1,0 +1,7 @@
+celular
+telefone
+iphone
+android
+galaxy
+xiomi
+huawei

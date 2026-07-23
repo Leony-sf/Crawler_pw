@@ -3,13 +3,10 @@
 Regras de classificação para o crawler Alibaba.com.
 
 Regra operacional atual:
-- classificar como IRREGULAR apenas anúncio de celular/telefone com tela
-  igual ou inferior a 3 polegadas;
-- celular com tela acima de 3 e até 3,5 polegadas fica como SUSPEITO;
-- celular com tela maior que 3,5 polegadas é DESCARTADO;
-- celular em que a tela não foi localizada fica como REVISAR, separado em
-  parquet/pasta própria para análise manual;
-- acessórios/peças/brinquedos sem indício real de telefonia são descartados.
+- classificar como IRREGULAR anúncio de celular com dimensões iguais ou inferiores a 12cm (altura) x 5,5cm (largura);
+- celular com dimensões maiores em ambos os eixos é DESCARTADO;
+- celular com uma dimensão menor e outra maior fica como SUSPEITO;
+- celular em que as medidas não foram localizadas fica como REVISAR.
 """
 
 from __future__ import annotations
@@ -18,97 +15,35 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-
-LIMITE_TELA_IRREGULAR_POLEGADAS = 3.0
-LIMITE_TELA_SUSPEITA_POLEGADAS = 3.5
+LIMITE_ALTURA_CM = 12.0
+LIMITE_LARGURA_CM = 5.5
 
 TERMOS_TELEFONIA = [
-    "dual sim",
-    "single sim",
-    "sim card",
-    "nano sim",
-    "micro sim",
-    "gsm",
-    "2g",
-    "3g",
-    "4g",
-    "5g",
-    "lte",
-    "volte",
-    "cell phone",
-    "cellphone",
-    "mobile phone",
-    "feature phone",
-    "smartphone",
-    "phone",
-    "telefone",
-    "celular",
-    "telefono",
-    "chamadas",
-    "call",
-    "calling",
+    "dual sim", "single sim", "sim card", "nano sim", "micro sim", "gsm", "2g", "3g", "4g", "5g", "lte", "volte",
+    "cell phone", "cellphone", "mobile phone", "feature phone", "smartphone", "phone", "telefone", "celular", "telefono",
+    "chamadas", "call", "calling",
 ]
 
 TERMOS_TELEFONIA_FORTE = [
-    "dual sim",
-    "single sim",
-    "sim card",
-    "nano sim",
-    "micro sim",
-    "gsm",
-    "lte",
-    "volte",
-    "cell phone",
-    "cellphone",
-    "mobile phone",
-    "feature phone",
-    "smartphone",
-    "telefone celular",
-    "calling",
+    "dual sim", "single sim", "sim card", "nano sim", "micro sim", "gsm", "lte", "volte", "cell phone", "cellphone",
+    "mobile phone", "feature phone", "smartphone", "telefone celular", "calling",
 ]
 
 TERMOS_ACESSORIO = [
-    "case",
-    "cover",
-    "phone case",
-    "screen protector",
-    "tempered glass",
-    "película",
-    "pelicula",
-    "capa",
-    "capinha",
-    "battery replacement",
-    "replacement battery",
-    "charger",
-    "charging cable",
-    "usb cable",
-    "lcd screen replacement",
-    "touch screen replacement",
-    "display replacement",
-    "motherboard",
-    "flex cable",
-    "spare parts",
-    "parts for",
-    "holder",
-    "stand",
-    "mount",
-    "headphone only",
+    "case", "cover", "phone case", "screen protector", "tempered glass", "película", "pelicula", "capa", "capinha",
+    "battery replacement", "replacement battery", "charger", "charging cable", "usb cable", "lcd screen replacement",
+    "touch screen replacement", "display replacement", "motherboard", "flex cable", "spare parts", "parts for",
+    "holder", "stand", "mount", "headphone only",
 ]
 
 TERMOS_BRINQUEDO = [
-    "toy phone",
-    "kids toy",
-    "children toy",
-    "educational toy",
-    "brinquedo",
-    "infantil educativo",
+    "toy phone", "kids toy", "children toy", "educational toy", "brinquedo", "infantil educativo",
 ]
 
 PADROES_ANATEL = [
     re.compile(r"\bANATEL\b[^\d]{0,40}(\d{8,13})", re.IGNORECASE),
     re.compile(r"\b(\d{5}[-\s]?\d{2}[-\s]?\d{4})\b"),
 ]
-
 
 @dataclass
 class Classificacao:
@@ -155,7 +90,6 @@ class Classificacao:
             "regra_classificacao": self.regra_classificacao,
         }
 
-
 def normalizar_texto(valor: Any) -> str:
     if valor is None:
         return ""
@@ -163,14 +97,11 @@ def normalizar_texto(valor: Any) -> str:
     texto = re.sub(r"\s+", " ", texto)
     return texto.strip()
 
-
 def contem_termo(texto_lower: str, termos: List[str]) -> List[str]:
     return [termo for termo in termos if termo.lower() in texto_lower]
 
-
 def _parse_numero(num: str) -> float:
     return float(num.replace(",", "."))
-
 
 def extrair_codigo_anatel(texto: str) -> str:
     texto = normalizar_texto(texto)
@@ -181,158 +112,55 @@ def extrair_codigo_anatel(texto: str) -> str:
                 return codigo
     return ""
 
-
 def _contexto_match(texto: str, inicio: int, fim: int, margem: int = 70) -> str:
     ini = max(0, inicio - margem)
     fim2 = min(len(texto), fim + margem)
     return normalizar_texto(texto[ini:fim2])
 
-
-def _contexto_eh_dimensao_fisica(contexto_lower: str) -> bool:
-    termos_dimensao = [
-        "product size",
-        "package size",
-        "packing size",
-        "carton size",
-        "dimension",
-        "dimensions",
-        "length",
-        "width",
-        "height",
-        "l*w*h",
-        "l x w x h",
-        "body size",
-        "phone size",
-        "product dimension",
-    ]
-    return any(t in contexto_lower for t in termos_dimensao)
-
-
-def extrair_tela_polegadas(*textos: str) -> Tuple[str, Optional[float], bool, bool, bool]:
-    """
-    Extrai tamanho de tela em polegadas.
-
-    Padrões aceitos:
-    - 6.5 Inch Rugged Phone
-    - 4.0 Inch IPS Touch Screen
-    - screen size: 2.4 inch
-    - display 0.66"
-    - tela de 5 polegadas
-
-    A ordem dos textos importa: título/card têm prioridade, depois detalhes,
-    depois body. Isso reduz contaminação por anúncios recomendados na página.
-    """
-    unidade = r"(?:\"|''|inch|inches|in\.?|polegadas?|pol\.?)"
-    numero = r"(\d{1,2}(?:[\.,]\d{1,2})?)"
-
+def extrair_medidas(*textos: str) -> Tuple[str, Optional[float], Optional[float]]:
+    """Extrai altura e largura em cm baseando-se em formatos comuns (ex: 115x52x14mm)."""
     padroes = [
-        re.compile(
-            rf"(?:screen\s*size|display\s*size|screen|display|touchscreen|touch\s*screen|lcd|tela|pantalla)"
-            rf"[^\d]{{0,40}}{numero}\s*{unidade}(?!\s*[xX×\*])",
-            re.IGNORECASE,
-        ),
-        re.compile(
-            rf"(?<!\d){numero}\s*(?:-|\s)?{unidade}(?!\s*[xX×\*])"
-            rf"(?:[^\|,;:]{{0,80}})?"
-            rf"(?:screen|display|touch\s*screen|touchscreen|lcd|smartphone|mobile\s*phone|cell\s*phone|phone|telefone|celular|telefono)",
-            re.IGNORECASE,
-        ),
+        re.compile(r"(\d{1,3}(?:[\.,]\d+)?)\s*(?:x|X|\*|×)\s*(\d{1,3}(?:[\.,]\d+)?)\s*(?:x|X|\*|×)\s*(\d{1,3}(?:[\.,]\d+)?)\s*(mm|cm)\b", re.IGNORECASE),
+        re.compile(r"(?:size|dimensions?|medidas?|tamanho)[^\d]{0,20}(\d{1,3}(?:[\.,]\d+)?)\s*(?:x|X|\*|×)\s*(\d{1,3}(?:[\.,]\d+)?)\s*(mm|cm)\b", re.IGNORECASE),
+        re.compile(r"(?:L\*W\*H|L\s*x\s*W\s*x\s*H)[^\d]{0,20}(\d{1,3}(?:[\.,]\d+)?)\s*(?:x|X|\*|×|-)\s*(\d{1,3}(?:[\.,]\d+)?)\s*(?:x|X|\*|×|-)\s*(\d{1,3}(?:[\.,]\d+)?)\s*(mm|cm)\b", re.IGNORECASE)
     ]
 
-    candidatos: List[Tuple[int, int, str, float, str]] = []
-    termos_contexto = [
-        "screen",
-        "display",
-        "touchscreen",
-        "touch screen",
-        "lcd",
-        "smartphone",
-        "mobile phone",
-        "cell phone",
-        "cellphone",
-        "phone",
-        "telefone",
-        "celular",
-        "telefono",
-        "tela",
-        "pantalla",
-    ]
-
-    for prioridade, texto in enumerate(textos):
+    for texto in textos:
         texto_norm = normalizar_texto(texto)
         if not texto_norm:
             continue
         for padrao in padroes:
             for m in padrao.finditer(texto_norm):
                 try:
-                    valor = _parse_numero(m.group(1))
+                    v1 = _parse_numero(m.group(1))
+                    v2 = _parse_numero(m.group(2))
+                    unidade = m.groups()[-1].lower()
+
+                    if unidade == 'mm':
+                        v1, v2 = v1 / 10.0, v2 / 10.0
+
+                    altura = max(v1, v2)
+                    largura = min(v1, v2)
+
+                    if 3.0 <= altura <= 25.0 and 1.5 <= largura <= 15.0:
+                        contexto = _contexto_match(texto_norm, m.start(), m.end(), margem=50)
+                        return contexto, round(altura, 2), round(largura, 2)
                 except Exception:
                     continue
-
-                # Faixa plausível para tela de telefone. Evita capturar 33W, 128GB etc.
-                if not (0.5 <= valor <= 8.5):
-                    continue
-
-                contexto = _contexto_match(texto_norm, m.start(), m.end())
-                contexto_lower = contexto.lower()
-                if _contexto_eh_dimensao_fisica(contexto_lower):
-                    continue
-                if not any(t in contexto_lower for t in termos_contexto):
-                    continue
-
-                candidatos.append((prioridade, m.start(), m.group(0), valor, contexto))
-
-    if not candidatos:
-        return "", None, False, False, False
-
-    candidatos.sort(key=lambda item: (item[0], item[1]))
-    _, _, trecho, valor, contexto = candidatos[0]
-    valor = round(valor, 2)
-    tela_mini = valor <= LIMITE_TELA_IRREGULAR_POLEGADAS
-    tela_suspeita = LIMITE_TELA_IRREGULAR_POLEGADAS < valor <= LIMITE_TELA_SUSPEITA_POLEGADAS
-    tela_grande = valor > LIMITE_TELA_SUSPEITA_POLEGADAS
-    return contexto or trecho, valor, tela_mini, tela_suspeita, tela_grande
-
+    return "", None, None
 
 def _classificacao_base(
-    *,
-    status: str,
-    categoria_print: str,
-    motivos: List[str],
-    evidencias: List[str],
-    codigo_anatel: str,
-    tela_txt: str,
-    tela_pol: Optional[float],
-    tela_mini: bool,
-    tela_suspeita: bool,
-    tela_grande: bool,
-    eh_mini_celular: bool,
-    eh_acessorio: bool,
-    sem_tela: bool,
-    regra: str,
+    *, status: str, categoria_print: str, motivos: List[str], evidencias: List[str], codigo_anatel: str,
+    medidas_txt: str, altura: Optional[float], largura: Optional[float], sem_medidas: bool,
+    eh_mini_celular: bool, eh_acessorio: bool, regra: str,
 ) -> Classificacao:
     return Classificacao(
-        status=status,
-        categoria_print=categoria_print,
-        motivos=motivos,
-        evidencias=sorted(set(evidencias), key=evidencias.index),
-        codigo_anatel=codigo_anatel,
-        medidas_extraidas="",
-        altura_cm=None,
-        largura_cm=None,
-        medida_proxima_ou_menor=False,
-        sem_medidas=sem_tela,
-        tela_extraida=tela_txt,
-        tela_polegadas=tela_pol,
-        tela_mini=tela_mini,
-        tela_suspeita=tela_suspeita,
-        tela_grande=tela_grande,
-        eh_mini_celular=eh_mini_celular,
-        eh_acessorio=eh_acessorio,
-        sem_tela=sem_tela,
-        regra_classificacao=regra,
+        status=status, categoria_print=categoria_print, motivos=motivos, evidencias=sorted(set(evidencias), key=evidencias.index),
+        codigo_anatel=codigo_anatel, medidas_extraidas=medidas_txt, altura_cm=altura, largura_cm=largura,
+        medida_proxima_ou_menor=eh_mini_celular, sem_medidas=sem_medidas, tela_extraida="", tela_polegadas=None,
+        tela_mini=False, tela_suspeita=False, tela_grande=False, eh_mini_celular=eh_mini_celular,
+        eh_acessorio=eh_acessorio, sem_tela=False, regra_classificacao=regra,
     )
-
 
 def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
     titulo = normalizar_texto(produto.get("titulo"))
@@ -340,8 +168,7 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
     detalhes = normalizar_texto(produto.get("detalhes"))
     texto_produto = normalizar_texto(produto.get("texto_pagina"))
 
-    texto_focado = " ".join([titulo, texto_card, detalhes])
-    texto_focado_lower = texto_focado.lower()
+    texto_focado_lower = " ".join([titulo, texto_card, detalhes]).lower()
     titulo_lower = titulo.lower()
     texto_completo = " ".join([titulo, texto_card, detalhes, texto_produto])
 
@@ -351,11 +178,7 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
     termos_brinquedo = contem_termo(texto_focado_lower, TERMOS_BRINQUEDO)
 
     codigo_anatel = extrair_codigo_anatel(texto_completo)
-    tela_txt, tela_pol, tela_mini, tela_suspeita, tela_grande = extrair_tela_polegadas(
-        " ".join([titulo, texto_card]),
-        detalhes,
-        texto_produto[:30000],
-    )
+    medidas_txt, altura_cm, largura_cm = extrair_medidas(" ".join([titulo, texto_card]), detalhes, texto_produto[:30000])
 
     tem_indicio_telefonia = bool(termos_tel)
     eh_acessorio = bool(termos_acessorio) and not termos_tel_forte
@@ -363,138 +186,60 @@ def classificar_produto(produto: Dict[str, Any]) -> Classificacao:
 
     if eh_acessorio:
         return _classificacao_base(
-            status="DESCARTADO",
-            categoria_print="",
-            motivos=["Produto aparenta ser acessório/peça, não aparelho celular."],
-            evidencias=termos_acessorio[:6],
-            codigo_anatel=codigo_anatel,
-            tela_txt=tela_txt,
-            tela_pol=tela_pol,
-            tela_mini=tela_mini,
-            tela_suspeita=tela_suspeita,
-            tela_grande=tela_grande,
-            eh_mini_celular=False,
-            eh_acessorio=True,
-            sem_tela=tela_pol is None,
-            regra="acessorio_descartado",
+            status="DESCARTADO", categoria_print="", motivos=["Produto aparenta ser acessório/peça, não aparelho celular."],
+            evidencias=termos_acessorio[:6], codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm,
+            largura=largura_cm, sem_medidas=altura_cm is None, eh_mini_celular=False, eh_acessorio=True, regra="acessorio_descartado",
         )
 
     if eh_brinquedo_sem_telefonia_real:
         return _classificacao_base(
-            status="DESCARTADO",
-            categoria_print="",
-            motivos=["Produto aparenta ser brinquedo/infantil sem indício real de chip/SIM/GSM."],
-            evidencias=termos_brinquedo[:6],
-            codigo_anatel=codigo_anatel,
-            tela_txt=tela_txt,
-            tela_pol=tela_pol,
-            tela_mini=tela_mini,
-            tela_suspeita=tela_suspeita,
-            tela_grande=tela_grande,
-            eh_mini_celular=False,
-            eh_acessorio=False,
-            sem_tela=tela_pol is None,
-            regra="brinquedo_descartado",
+            status="DESCARTADO", categoria_print="", motivos=["Produto aparenta ser brinquedo sem indício real de telefonia."],
+            evidencias=termos_brinquedo[:6], codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm,
+            largura=largura_cm, sem_medidas=altura_cm is None, eh_mini_celular=False, eh_acessorio=False, regra="brinquedo_descartado",
         )
 
     if not tem_indicio_telefonia:
         return _classificacao_base(
-            status="DESCARTADO",
-            categoria_print="",
-            motivos=["Sem indício suficiente de celular/telefone com chip."],
-            evidencias=[],
-            codigo_anatel=codigo_anatel,
-            tela_txt=tela_txt,
-            tela_pol=tela_pol,
-            tela_mini=tela_mini,
-            tela_suspeita=tela_suspeita,
-            tela_grande=tela_grande,
-            eh_mini_celular=False,
-            eh_acessorio=False,
-            sem_tela=tela_pol is None,
-            regra="sem_telefonia",
+            status="DESCARTADO", categoria_print="", motivos=["Sem indício suficiente de celular/telefone com chip."],
+            evidencias=[], codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm, largura=largura_cm,
+            sem_medidas=altura_cm is None, eh_mini_celular=False, eh_acessorio=False, regra="sem_telefonia",
         )
 
     evidencias: List[str] = []
-    if tela_txt:
-        evidencias.append(f"Tela capturada: {tela_txt}")
+    if medidas_txt: evidencias.append(f"Medidas: {medidas_txt}")
     evidencias.extend(termos_tel[:8])
-    if codigo_anatel:
-        evidencias.append(f"ANATEL: {codigo_anatel}")
+    if codigo_anatel: evidencias.append(f"ANATEL: {codigo_anatel}")
 
-    if tela_pol is None:
+    if altura_cm is None:
         return _classificacao_base(
-            status="REVISAR",
-            categoria_print="suspeitos/sem_tela",
-            motivos=["Aparelho celular localizado, mas o tamanho da tela não foi capturado automaticamente."],
-            evidencias=evidencias,
-            codigo_anatel=codigo_anatel,
-            tela_txt="",
-            tela_pol=None,
-            tela_mini=False,
-            tela_suspeita=False,
-            tela_grande=False,
-            eh_mini_celular=False,
-            eh_acessorio=False,
-            sem_tela=True,
-            regra="celular_sem_tela_localizada",
+            status="REVISAR", categoria_print="suspeitos/sem_medidas",
+            motivos=["Aparelho celular localizado, mas as dimensões físicas não foram capturadas."],
+            evidencias=evidencias, codigo_anatel=codigo_anatel, medidas_txt="", altura=None, largura=None,
+            sem_medidas=True, eh_mini_celular=False, eh_acessorio=False, regra="celular_sem_medidas",
         )
 
-    if tela_mini:
-        motivos = [f"Tela de {tela_pol}\" é igual ou inferior a 3 polegadas; classificar como mini celular."]
-        if not codigo_anatel:
-            motivos.append("Código ANATEL não identificado no anúncio.")
-        return _classificacao_base(
-            status="IRREGULAR",
-            categoria_print="irregulares/tela_ate_3_polegadas",
-            motivos=motivos,
-            evidencias=evidencias,
-            codigo_anatel=codigo_anatel,
-            tela_txt=tela_txt,
-            tela_pol=tela_pol,
-            tela_mini=True,
-            tela_suspeita=False,
-            tela_grande=False,
-            eh_mini_celular=True,
-            eh_acessorio=False,
-            sem_tela=False,
-            regra="tela_igual_ou_inferior_3_polegadas",
-        )
+    eh_menor_ou_igual = altura_cm <= LIMITE_ALTURA_CM and largura_cm <= LIMITE_LARGURA_CM
+    eh_maior = altura_cm > LIMITE_ALTURA_CM and largura_cm > LIMITE_LARGURA_CM
 
-    if tela_suspeita:
-        motivos = [f"Tela de {tela_pol}\" está próxima de 3 polegadas; enviar para revisão manual como suspeito."]
-        if not codigo_anatel:
-            motivos.append("Código ANATEL não identificado no anúncio.")
+    if eh_menor_ou_igual:
+        motivos = [f"Medidas ({altura_cm}x{largura_cm} cm) menores ou iguais ao limite estipulado (12x5,5 cm)."]
+        if not codigo_anatel: motivos.append("Código ANATEL não identificado no anúncio.")
         return _classificacao_base(
-            status="SUSPEITO",
-            categoria_print="suspeitos/tela_proxima_3_polegadas",
-            motivos=motivos,
-            evidencias=evidencias,
-            codigo_anatel=codigo_anatel,
-            tela_txt=tela_txt,
-            tela_pol=tela_pol,
-            tela_mini=False,
-            tela_suspeita=True,
-            tela_grande=False,
-            eh_mini_celular=False,
-            eh_acessorio=False,
-            sem_tela=False,
-            regra="tela_acima_3_ate_3_5_polegadas_suspeito",
+            status="IRREGULAR", categoria_print="irregulares/medidas_ate_12x5_5", motivos=motivos, evidencias=evidencias,
+            codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm, largura=largura_cm, sem_medidas=False,
+            eh_mini_celular=True, eh_acessorio=False, regra="medidas_irregulares",
         )
-
-    return _classificacao_base(
-        status="DESCARTADO",
-        categoria_print="",
-        motivos=[f"Tela de {tela_pol}\" é maior que 3,5 polegadas; fora do recorte de mini celular."],
-        evidencias=evidencias,
-        codigo_anatel=codigo_anatel,
-        tela_txt=tela_txt,
-        tela_pol=tela_pol,
-        tela_mini=False,
-        tela_suspeita=False,
-        tela_grande=True,
-        eh_mini_celular=False,
-        eh_acessorio=False,
-        sem_tela=False,
-        regra="tela_maior_que_3_5_polegadas",
-    )
+    elif eh_maior:
+        return _classificacao_base(
+            status="DESCARTADO", categoria_print="", motivos=[f"Medidas ({altura_cm}x{largura_cm} cm) superiores ao limite."],
+            evidencias=evidencias, codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm, largura=largura_cm,
+            sem_medidas=False, eh_mini_celular=False, eh_acessorio=False, regra="medida_maior",
+        )
+    else:
+        motivos = [f"Medidas ({altura_cm}x{largura_cm} cm) têm proporções mistas em relação ao limite (12x5,5 cm)."]
+        if not codigo_anatel: motivos.append("Código ANATEL não identificado no anúncio.")
+        return _classificacao_base(
+            status="SUSPEITO", categoria_print="suspeitos/medida_mista", motivos=motivos, evidencias=evidencias,
+            codigo_anatel=codigo_anatel, medidas_txt=medidas_txt, altura=altura_cm, largura=largura_cm, sem_medidas=False,
+            eh_mini_celular=False, eh_acessorio=False, regra="medida_mista",
+        )

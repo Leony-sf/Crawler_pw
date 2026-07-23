@@ -1,13 +1,13 @@
-bm10 chip
-bm10 gsm
-bm20 chip
-bm30 gsm
-bt11 chip
-long-cz j8 chip
-l8star mini phone
-zanco tiny chip
-soyes xs chip
-soyes s10 chip
-melrose s9 chip
-servo phone chip
-kechaoda chip
+mini celular
+celular pequeno
+celular chave
+celular formato chave
+mini telefone
+micro celular
+tiny phone
+small mobile phone
+bluetooth dialer phone
+mini smartphone
+celular de bolso
+mini phone gsm
+celular dual sim pequeno

@@ -14,14 +14,15 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-LIMITE_COMPRIMENTO_CM = 8.5
+LIMITE_COMPRIMENTO_CM = 12.0
 LIMITE_LARGURA_CM = 5.5
 MARGEM_PROXIMA_CM = 1.0
 
+# Lista ampliada para cortar pela raiz
 MARCAS_GRANDES = {
-    "apple", "samsung", "motorola", "xiaomi", "redmi", "poco", "realme",
-    "oppo", "vivo", "honor", "huawei", "nokia", "lg", "sony", "asus",
-    "infinix", "tecno", "oneplus", "lenovo", "zte", "google", "nothing",
+    "apple", "iphone", "samsung", "galaxy", "motorola", "xiaomi", "redmi", "poco","huawei", "nokia", "lg", "sony", "asus",
+    "lenovo","google",
+    "blackberry"
 }
 
 TERMOS_CELULAR = {
@@ -35,8 +36,12 @@ TERMOS_MINI = {
     "mini celular", "mini telefone", "mini phone", "mini mobile", "small phone",
     "smallest phone", "tiny phone", "pocket phone", "card phone", "credit card phone",
     "ultra thin phone", "ultra small", "micro phone", "telefone pequeno",
-    "celular pequeno", "mini smartphone", "bm10", "bm 10", "l8star", "aeku",
-    "servo", "soyes", "melrose", "kuh", "q8 mini", "v8 mini", "t2 mini",
+    "celular pequeno", "mini smartphone", "aeku", "kuh", "q8 mini", "v8 mini", "t2 mini",
+    "bm10", "bm20", "bm30", "bm50", "bm70", "bm90", "bm100", "bm200", "bm310",
+    "bt11", "bt22", "b25", "b30", "j8", "j9", "j10", "long-cz j8", "long-cz j9",
+    "k10", "k33", "k66", "soyes s10", "soyes xs", "soyes 7s", "melrose s9", "melrose s10",
+    "l8star", "l8 star", "gtstar", "gt star", "zanco", "zanco tiny", "servo phone",
+    "servo", "anica", "aizku", "kechaoda", "soyes", "melrose", "long-cz"
 }
 
 TERMOS_FUNCIONAIS = {
@@ -51,11 +56,6 @@ TERMOS_ACESSORIO = {
     "charger", "carregador", "cable", "cabo", "fone", "earphone", "headphone",
     "holder", "suporte", "strap", "cordao", "cordão", "adapter", "adaptador",
     "camera lens", "film", "skin", "sticker", "adesivo", "bag", "bolsa",
-}
-
-TERMOS_BRINQUEDO = {
-    "toy", "toys", "brinquedo", "miniature", "miniatura", "doll", "boneca",
-    "fake phone", "dummy phone", "model phone", "kids toy", "children toy",
 }
 
 
@@ -131,18 +131,12 @@ def _converter_para_cm(valor: float, unidade: str) -> float:
 
 
 def extrair_dimensoes(texto: str) -> List[DimensaoEncontrada]:
-    """Extrai dimensões físicas prováveis em cm/mm/in.
-
-    Evita usar medidas isoladas como "tela 1.8 polegadas"; só coleta padrões com
-    pelo menos dois lados separados por x/*/×.
-    """
     if not texto:
         return []
 
     t = normalizar_texto(texto)
     achados: List[DimensaoEncontrada] = []
 
-    # 8.5 x 5.5 cm | 85*55mm | 8,5×5,5×1,2 cm
     padrao_unidade_final = re.compile(
         r"(?P<a>\d{1,3}(?:[\.,]\d+)?)\s*(?:x|\*|×|by)\s*"
         r"(?P<b>\d{1,3}(?:[\.,]\d+)?)"
@@ -150,7 +144,6 @@ def extrair_dimensoes(texto: str) -> List[DimensaoEncontrada]:
         r"(?P<u>cm|mm|in|inch|inches|\")\b"
     )
 
-    # 85mm x 55mm | 8.5cm x 5.5cm
     padrao_unidade_por_lado = re.compile(
         r"(?P<a>\d{1,3}(?:[\.,]\d+)?)\s*(?P<ua>cm|mm|in|inch|inches|\")\s*"
         r"(?:x|\*|×|by)\s*"
@@ -182,7 +175,6 @@ def _dimensao_fisica_plausivel(a: float, b: float, c: Optional[float]) -> bool:
     valores = [v for v in [a, b, c] if v is not None]
     if len(valores) < 2:
         return False
-    # Evita capturar coisas absurdas ou claramente não relacionadas ao corpo do produto.
     if any(v <= 0 or v > 80 for v in valores):
         return False
     return True
@@ -224,13 +216,27 @@ def classificar_produto(produto: Dict[str, Any], manter_brinquedos: bool = False
     tem_celular = bool(celular_terms)
     tem_funcional = bool(funcionais)
     acessorio = contem_termo(titulo_norm, TERMOS_ACESSORIO) and not (tem_mini and tem_funcional)
-    brinquedo = contem_termo(texto_norm, TERMOS_BRINQUEDO)
-    marca_grande = contem_termo(texto_norm, MARCAS_GRANDES)
+    
+    # CORREÇÃO: Buscar marcas grandes apenas no título do anúncio
+    marca_grande = contem_termo(titulo_norm, MARCAS_GRANDES)
 
     dimensoes = extrair_dimensoes(texto_total)
     possui_medida = bool(dimensoes)
 
-    # Acessórios devem sair, a menos que o texto indique que é realmente um aparelho.
+    # REGRA 1: Descarte imediato de Marcas Grandes (Xiaomi, Samsung, etc)
+    if marca_grande:
+        return ResultadoClassificacao(
+            status="DESCARTADO",
+            manter=False,
+            suspeito=False,
+            motivo="marca de smartphone comum detectada (ex: Xiaomi, Samsung, Apple)",
+            categoria_print="descartados/marcas_grandes",
+            possui_medida=possui_medida,
+            dimensoes=[asdict(d) for d in dimensoes],
+            termos_encontrados=termos,
+        )
+
+    # REGRA 2: Descarte de Acessórios (Capinhas, películas, etc)
     if acessorio:
         return ResultadoClassificacao(
             status="DESCARTADO",
@@ -243,76 +249,57 @@ def classificar_produto(produto: Dict[str, Any], manter_brinquedos: bool = False
             termos_encontrados=termos,
         )
 
-    if brinquedo and not manter_brinquedos and not tem_funcional:
-        return ResultadoClassificacao(
-            status="DESCARTADO",
-            manter=False,
-            suspeito=False,
-            motivo="aparenta ser brinquedo/miniatura sem indício de SIM/chamadas",
-            categoria_print="descartados/brinquedos",
-            possui_medida=possui_medida,
-            dimensoes=[asdict(d) for d in dimensoes],
-            termos_encontrados=termos,
-        )
+    candidato = tem_mini or (tem_celular and tem_funcional)
 
-    candidato = tem_mini or (tem_celular and tem_funcional) or (tem_celular and "mini" in texto_norm)
+    if candidato:
+        if dimensoes:
+            motivos_dim = []
+            suspeito_por_dim = False
+            for d in dimensoes:
+                ok, motivo_dim = medida_menor_ou_proxima(d)
+                motivos_dim.append(motivo_dim)
+                suspeito_por_dim = suspeito_por_dim or ok
 
-    if dimensoes:
-        motivos_dim = []
-        suspeito_por_dim = False
-        for d in dimensoes:
-            ok, motivo_dim = medida_menor_ou_proxima(d)
-            motivos_dim.append(motivo_dim)
-            suspeito_por_dim = suspeito_por_dim or ok
-
-        if suspeito_por_dim and (candidato or tem_celular or tem_mini):
-            extra = ""
-            if marca_grande and not tem_mini:
-                extra = " — marca grande detectada, mas mantido por dimensão suspeita"
-            return ResultadoClassificacao(
-                status="IRREGULAR",
-                manter=True,
-                suspeito=True,
-                motivo="; ".join(motivos_dim) + extra,
-                categoria_print="irregulares/mini_celulares",
-                possui_medida=True,
-                dimensoes=[asdict(d) for d in dimensoes],
-                termos_encontrados=termos,
-            )
-
-        if candidato:
+            if suspeito_por_dim:
+                return ResultadoClassificacao(
+                    status="IRREGULAR",
+                    manter=True,
+                    suspeito=True,
+                    motivo="; ".join(motivos_dim),
+                    categoria_print="irregulares/mini_celulares",
+                    possui_medida=True,
+                    dimensoes=[asdict(d) for d in dimensoes],
+                    termos_encontrados=termos,
+                )
+            
             return ResultadoClassificacao(
                 status="REVISAR",
                 manter=True,
                 suspeito=True,
-                motivo="candidato a mini celular, mas medida encontrada não ficou abaixo/próxima do limite: " + "; ".join(motivos_dim),
+                motivo="candidato forte a mini celular, mas medida encontrada não ficou abaixo/próxima do limite: " + "; ".join(motivos_dim),
                 categoria_print="irregulares/revisar_medidas",
                 possui_medida=True,
                 dimensoes=[asdict(d) for d in dimensoes],
                 termos_encontrados=termos,
             )
-
-    # Regra solicitada: não descartar candidato sem medidas.
-    if candidato and not possui_medida:
-        extra = ""
-        if marca_grande and not tem_mini:
-            extra = " Marca grande detectada; não foi usada como indício principal."
-        return ResultadoClassificacao(
-            status="IRREGULAR",
-            manter=True,
-            suspeito=True,
-            motivo="candidato a mini celular/celular pequeno sem medidas informadas." + extra,
-            categoria_print="irregulares/sem_medidas",
-            possui_medida=False,
-            dimensoes=[],
-            termos_encontrados=termos,
-        )
+            
+        else:
+            return ResultadoClassificacao(
+                status="IRREGULAR",
+                manter=True,
+                suspeito=True,
+                motivo="candidato forte a mini celular/celular pequeno (termos presentes) sem medidas informadas.",
+                categoria_print="irregulares/sem_medidas",
+                possui_medida=False,
+                dimensoes=[],
+                termos_encontrados=termos,
+            )
 
     return ResultadoClassificacao(
         status="DESCARTADO",
         manter=False,
         suspeito=False,
-        motivo="sem indício suficiente de mini celular/celular pequeno",
+        motivo="sem indício rigoroso de mini celular/funções de rede",
         categoria_print="descartados/fora_do_escopo",
         possui_medida=possui_medida,
         dimensoes=[asdict(d) for d in dimensoes],

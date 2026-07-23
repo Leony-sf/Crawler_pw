@@ -24,24 +24,22 @@ from .utils import arquivo_seguro, bloco, criar_pastas_saida, gerar_id, log, sec
 # URL / INÍCIO
 # ============================================================
 
-def _url_busca(query: str) -> str:
+def _url_busca(query: str, somente_internacional: bool = False) -> str:
     termo = quote_plus(query or "celular").replace("+", "-")
-    return f"https://lista.mercadolivre.com.br/{termo}"
+    url = f"https://lista.mercadolivre.com.br/{termo}"
+    if somente_internacional:
+        url += "_Filters_OMNI*COMPRA*INTERNACIONAL_NoIndex_True"
+    return url
 
 
-def _inicio_lento(page: Page, query: str, url: str | None) -> None:
-    """Abertura mais calma para reduzir modal/fluxo de login/conta."""
-    page.goto(
-        "https://www.mercadolivre.com.br/",
-        wait_until="domcontentloaded",
-        timeout=45000,
-    )
+def _inicio_lento(page: Page, query: str, url: str | None, somente_internacional: bool = False) -> None:
+    page.goto("https://www.mercadolivre.com.br/", wait_until="domcontentloaded", timeout=45000)
     page.wait_for_timeout(2500)
     fechar_modais_leves(page)
     _fechar_cookies_se_aparecer(page)
     page.wait_for_timeout(1200)
 
-    destino = url or _url_busca(query)
+    destino = url or _url_busca(query, somente_internacional)
     log("busca", f"Abrindo listagem: {destino}")
 
     page.goto(destino, wait_until="domcontentloaded", timeout=45000)
@@ -62,15 +60,6 @@ def _inicio_lento(page: Page, query: str, url: str | None) -> None:
 # ============================================================
 
 def _coletar_links_produtos(page: Page, max_scrolls: int = 16, alvo_minimo: int = 35) -> list[str]:
-    """
-    Coleta links da listagem com rolagem progressiva e controlada.
-
-    Pontos importantes:
-    - não para ao encontrar poucos links;
-    - não captura links de reviews/questions;
-    - não captura links de paginação;
-    - não depende de fallback _Desde_.
-    """
     script = r"""
     () => {
       const out = new Set();
@@ -89,8 +78,9 @@ def _coletar_links_produtos(page: Page, max_scrolls: int = 16, alvo_minimo: int 
           .toLowerCase();
 
         const pareceProduto = href.includes('/p/')
+          || href.includes('/up/')
           || /\/MLB-?\d+/i.test(href)
-          || /\bMLB\d+\b/i.test(href);
+          || /\bMLBU?\d+\b/i.test(href);
 
         const parecePaginacao = texto.includes('seguinte')
           || texto.includes('próxima')
@@ -156,13 +146,7 @@ def _coletar_links_produtos(page: Page, max_scrolls: int = 16, alvo_minimo: int 
 # ============================================================
 
 def _fechar_cookies_se_aparecer(page: Page) -> None:
-    """Fecha banner de cookies se ele estiver atrapalhando a paginação."""
-    candidatos = [
-        "Aceitar cookies",
-        "Aceitar todos",
-        "Entendi",
-        "Concordo",
-    ]
+    candidatos = ["Aceitar cookies", "Aceitar todos", "Entendi", "Concordo"]
 
     for texto in candidatos:
         try:
@@ -175,9 +159,7 @@ def _fechar_cookies_se_aparecer(page: Page) -> None:
         except Exception:
             pass
 
-
 def _clicar_seguinte_visivel(page: Page, url_antes: str) -> bool:
-    """Tenta clicar no botão/link real 'Seguinte' quando ele está no DOM."""
     seletores_seguinte = [
         "li.andes-pagination__button--next a",
         "li.andes-pagination__button--next button",
@@ -203,17 +185,10 @@ def _clicar_seguinte_visivel(page: Page, url_antes: str) -> bool:
         for i in range(total):
             try:
                 item = loc.nth(i)
-
                 if not item.is_visible(timeout=800):
                     continue
 
-                classe = " ".join(
-                    [
-                        item.get_attribute("class") or "",
-                        item.evaluate("el => el.parentElement ? el.parentElement.className || '' : ''"),
-                    ]
-                ).lower()
-
+                classe = " ".join([item.get_attribute("class") or "", item.evaluate("el => el.parentElement ? el.parentElement.className || '' : ''")]).lower()
                 aria_disabled = (item.get_attribute("aria-disabled") or "").lower()
                 href = (item.get_attribute("href") or "").strip()
 
@@ -223,7 +198,6 @@ def _clicar_seguinte_visivel(page: Page, url_antes: str) -> bool:
 
                 item.scroll_into_view_if_needed(timeout=3000)
                 page.wait_for_timeout(500)
-
                 log("paginação", f"Botão 'Seguinte' encontrado pelo seletor: {seletor}")
 
                 try:
@@ -257,11 +231,9 @@ def _clicar_seguinte_visivel(page: Page, url_antes: str) -> bool:
                 _fechar_cookies_se_aparecer(page)
 
                 mudou = page.url.split("#")[0].rstrip("/") != str(url_antes or "").split("#")[0].rstrip("/")
-
                 if mudou:
                     log("paginação", f"Próxima página carregada: {page.url}")
                     return True
-
             except Exception:
                 continue
 
@@ -269,14 +241,7 @@ def _clicar_seguinte_visivel(page: Page, url_antes: str) -> bool:
 
 
 def _ir_proxima_pagina(page: Page, pagina_atual: int | None = None) -> bool:
-    """
-    Vai para a próxima página clicando no botão real 'Seguinte'.
-
-    Esta versão NÃO monta URL com _Desde_ e NÃO faz rolagem agressiva até o fim absoluto.
-    Ela desce gradualmente até a paginação exibida pelo Mercado Livre e clica no botão real.
-    """
     bloco("paginação")
-
     if pagina_atual is not None:
         log("paginação", f"Procurando botão 'Seguinte' após finalizar a página {pagina_atual}.")
     else:
@@ -285,14 +250,11 @@ def _ir_proxima_pagina(page: Page, pagina_atual: int | None = None) -> bool:
     _fechar_cookies_se_aparecer(page)
     url_antes = page.url
 
-    # Primeiro tenta sem rolar, caso a página já esteja perto da paginação.
     if _clicar_seguinte_visivel(page, url_antes):
         return True
 
-    # Desce gradualmente. O botão fica antes de 'Produtos relacionados'.
     for tentativa in range(1, 13):
         log("paginação", f"Descendo para localizar paginação. Tentativa {tentativa}/12")
-
         try:
             page.mouse.wheel(0, 850)
         except Exception:
@@ -316,34 +278,21 @@ def _ir_proxima_pagina(page: Page, pagina_atual: int | None = None) -> bool:
 # ============================================================
 
 MINI_COLUNAS_NUMERICAS = [
-    "mini_maior_cm",
-    "mini_largura_cm",
-    "mini_espessura_cm",
-    "mini_limite_maior_cm",
-    "mini_limite_largura_cm",
+    "mini_maior_cm", "mini_largura_cm", "mini_espessura_cm",
+    "mini_limite_maior_cm", "mini_limite_largura_cm",
 ]
 
-
 def _preparar_dataframe_parquet(linhas: list[dict[str, Any]]) -> pd.DataFrame:
-    """Garante tipos estáveis antes de salvar em Parquet.
-
-    O PyArrow quebra quando uma mesma coluna mistura float/int com string vazia.
-    Por isso, colunas mini_*_cm são sempre numéricas e as demais são texto.
-    """
     df = pd.DataFrame(linhas)
     if df.empty:
         return df
-
     for col in MINI_COLUNAS_NUMERICAS:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col].replace("", None), errors="coerce").astype("float64")
-
     for col in df.columns:
         if col not in MINI_COLUNAS_NUMERICAS:
             df[col] = df[col].where(pd.notna(df[col]), "").astype(str)
-
     return df
-
 
 def _salvar_print(page: Page, saida_base: Path, linha: dict[str, Any]) -> None:
     pid = linha.get("pid") or gerar_id(linha.get("titulo"), linha.get("url"))
@@ -358,7 +307,6 @@ def _salvar_print(page: Page, saida_base: Path, linha: dict[str, Any]) -> None:
     except Exception as exc:
         log("arquivos", f"Falha ao salvar print: {exc}")
 
-
 def _salvar_resultados(
     saida: Path,
     linhas: list[dict[str, Any]],
@@ -366,7 +314,6 @@ def _salvar_resultados(
     descartados_mini: list[dict[str, Any]] | None = None,
     suspeitos_mini: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Salva apenas Parquet. Não gera CSV e não gera pasta HTML."""
     df = _preparar_dataframe_parquet(linhas)
     df.to_parquet(saida / "products.parquet", index=False)
     df.to_parquet(saida / "resultados.parquet", index=False)
@@ -390,57 +337,36 @@ def _salvar_resultados(
 def _abrir_contexto_chrome_persistente(p, headless: bool = False) -> BrowserContext:
     profile_dir = Path("chrome_profiles") / "mercadolivre_profile"
     profile_dir.mkdir(parents=True, exist_ok=True)
-
     return p.chromium.launch_persistent_context(
         user_data_dir=str(profile_dir),
         headless=headless,
         viewport={"width": 1366, "height": 900},
         locale="pt-BR",
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        args=[
-            "--start-maximized",
-            "--disable-blink-features=AutomationControlled",
-        ],
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        args=["--start-maximized", "--disable-blink-features=AutomationControlled"],
         slow_mo=140,
     )
 
-
 def _clicar_ver_mais_resultados_se_existir(page: Page) -> None:
-    candidatos = [
-        "Ver mais resultados",
-        "Mostrar mais resultados",
-        "Ver mais",
-        "Mais resultados",
-    ]
-
+    candidatos = ["Ver mais resultados", "Mostrar mais resultados", "Ver mais", "Mais resultados"]
     for texto in candidatos:
         try:
             loc = page.get_by_text(texto, exact=False).first
-
             if loc.count() and loc.is_visible(timeout=1200):
                 loc.scroll_into_view_if_needed(timeout=2500)
                 page.wait_for_timeout(800)
                 loc.click(timeout=3000)
                 page.wait_for_load_state("domcontentloaded", timeout=20000)
-
                 try:
                     page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
-
                 page.wait_for_timeout(2000)
                 log("listagem", f"Cliquei em: {texto}")
                 return
-
         except Exception:
             continue
-
     log("listagem", "Botão 'Ver mais resultados' não apareceu.")
-
 
 def _sem_limite(valor: int | None) -> bool:
     try:
@@ -448,58 +374,26 @@ def _sem_limite(valor: int | None) -> bool:
     except Exception:
         return True
 
+def _conectar_chrome_real_ml(p) -> BrowserContext:
+    log("chrome", "Conectando ao Chrome real na porta 9225...")
+    browser = p.chromium.connect_over_cdp("http://127.0.0.1:9225")
+    if browser.contexts:
+        context = browser.contexts[0]
+    else:
+        context = browser.new_context(viewport={"width": 1366, "height": 900}, locale="pt-BR")
+    log("chrome", "Conectado ao Chrome real com sucesso.")
+    return context
+
 
 # ============================================================
 # FLUXO PRINCIPAL
 # ============================================================
 
-def _conectar_chrome_real_ml(p) -> BrowserContext:
-    """
-    Conecta o Playwright em um Chrome real já aberto com:
-    --remote-debugging-port=9225
-    """
-    log("chrome", "Conectando ao Chrome real na porta 9225...")
-
-    browser = p.chromium.connect_over_cdp("http://127.0.0.1:9225")
-
-    if browser.contexts:
-        context = browser.contexts[0]
-    else:
-        context = browser.new_context(
-            viewport={"width": 1366, "height": 900},
-            locale="pt-BR",
-        )
-
-    log("chrome", "Conectado ao Chrome real com sucesso.")
-    return context
-
-def _pausa_manual_login_ml(page: Page) -> None:
-    secao("Pausa manual Mercado Livre")
-    log("login", "Se o Mercado Livre pediu login/criar conta, resolva manualmente no navegador.")
-    log("login", "Quando estiver na tela correta da busca/listagem de celulares, volte aqui no terminal.")
-    input("[login] Pressione ENTER para iniciar o crawler... ")
-
-    try:
-        page.wait_for_load_state("domcontentloaded", timeout=20000)
-    except Exception:
-        pass
-
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:
-        pass
-
-    page.wait_for_timeout(1500)
-    fechar_modais_leves(page)
-    _fechar_cookies_se_aparecer(page)
-
-    log("login", f"Continuando execução na URL atual: {page.url}")
-
-
 def rodar_playwright_mercadolivre(
     query: str = "smartphone",
     queries: list[str] | None = None,
     limite: int = 5,
+    limite_por_query: int = 0,
     base_anatel: BaseAnatel | None = None,
     headless: bool = False,
     url: str | None = None,
@@ -509,13 +403,9 @@ def rodar_playwright_mercadolivre(
     mini_maior_cm: float = 8.5,
     mini_largura_cm: float = 5.5,
     mini_manter_sem_medida: bool = False,
+    somente_internacional: bool = False, # <-- NOVA FLAG DE IMPORTAÇÃO
 ) -> dict[str, Any]:
-    """
-    Fluxo Mercado Livre no padrão da Shopee.
-
-    max_paginas <= 0 significa sem limite de páginas: roda até não existir próxima página.
-    limite <= 0 significa sem limite de produtos: processa enquanto houver páginas/produtos.
-    """
+    
     saida_base = criar_pastas_saida(saida)
     linhas: list[dict[str, Any]] = []
     comentarios_linhas: list[dict[str, Any]] = []
@@ -536,9 +426,9 @@ def rodar_playwright_mercadolivre(
             if chave in vistos_consultas:
                 continue
             vistos_consultas.add(chave)
-            consultas_busca.append((q, _url_busca(q)))
+            consultas_busca.append((q, _url_busca(q, somente_internacional)))
         if not consultas_busca:
-            consultas_busca = [("celular", _url_busca("celular"))]
+            consultas_busca = [("celular", _url_busca("celular", somente_internacional))]
 
     url_busca = consultas_busca[0][1]
     urls_processadas: set[str] = set()
@@ -551,14 +441,12 @@ def rodar_playwright_mercadolivre(
 
     secao("Mercado Livre Playwright")
     log("crawler", f"URL inicial: {url_busca}")
-    log("crawler", f"Total de buscas: {len(consultas_busca)}")
-    log("crawler", f"Limite total de produtos: {limite_txt}")
+    log("crawler", f"Filtro Internacional: {'ATIVADO' if somente_internacional else 'DESATIVADO'}")
+    log("crawler", f"Total de buscas engatilhadas: {len(consultas_busca)}")
+    log("crawler", f"Limite total geral: {limite_txt}")
+    if limite_por_query > 0:
+        log("crawler", f"Limite rotativo por pesquisa: {limite_por_query} anúncios")
     log("crawler", f"Máximo de páginas: {max_paginas_txt}")
-    if mini_celulares:
-        log("mini celular", "Modo mini celular ativado")
-        log("mini celular", f"Limite dimensional: maior eixo <= {mini_maior_cm} cm e largura <= {mini_largura_cm} cm")
-        log("mini celular", f"Sem medida explícita: {'manter para revisão' if mini_manter_sem_medida else 'descartar da planilha principal'}")
-    log("crawler", f"Saída: {saida_base.resolve()}")
 
     with sync_playwright() as p:
         context = _conectar_chrome_real_ml(p)
@@ -567,7 +455,7 @@ def rodar_playwright_mercadolivre(
         page.set_default_navigation_timeout(45000)
 
         try:
-            _inicio_lento(page, query=consultas_busca[0][0], url=consultas_busca[0][1])
+            _inicio_lento(page, query=consultas_busca[0][0], url=consultas_busca[0][1], somente_internacional=somente_internacional)
 
             secao("Pausa manual Mercado Livre")
             log("login", "Use o Chrome real aberto para resolver login/captcha se necessário.")
@@ -581,8 +469,10 @@ def rodar_playwright_mercadolivre(
 
             for consulta_indice, (consulta_query, consulta_url) in enumerate(consultas_busca, start=1):
                 if not sem_limite_produtos and total_processados >= int(limite):
-                    log("busca", f"Limite total atingido antes da próxima busca: {total_processados}/{limite}.")
+                    log("busca", f"Limite geral de {limite} atingido.")
                     break
+
+                processados_nesta_query = 0 
 
                 secao(f"BUSCA {consulta_indice}/{len(consultas_busca)}")
                 log("busca", f"Termo atual: {consulta_query}")
@@ -603,12 +493,13 @@ def rodar_playwright_mercadolivre(
                 paginas_sem_links_novos = 0
 
                 while True:
+                    if limite_por_query > 0 and processados_nesta_query >= limite_por_query:
+                        break
+
                     if not sem_limite_produtos and total_processados >= int(limite):
-                        log("busca", f"Limite total atingido: {total_processados}/{limite}.")
                         break
 
                     if not sem_limite_paginas and pagina_atual > int(max_paginas):
-                        log("paginação", f"Máximo de páginas atingido: {max_paginas}.")
                         break
 
                     secao(f"PÁGINA {pagina_atual}")
@@ -629,54 +520,40 @@ def rodar_playwright_mercadolivre(
 
                     for href in links_pagina:
                         href_limpo = str(href or "").split("#")[0].strip()
-
-                        if not href_limpo:
+                        if not href_limpo or href_limpo in vistos_pagina or href_limpo in urls_processadas:
                             continue
-
-                        if href_limpo in vistos_pagina:
-                            continue
-
-                        if href_limpo in urls_processadas:
-                            continue
-
                         vistos_pagina.add(href_limpo)
                         links_novos.append(href_limpo)
 
-                    log("listagem", f"Links capturados: {len(links_pagina)}")
                     log("listagem", f"Links novos para processar: {len(links_novos)}")
 
                     if not links_novos:
                         paginas_sem_links_novos += 1
-                        bloco("paginação")
-                        log(
-                            "paginação",
-                            f"Nenhum produto novo nesta página. Ocorrências seguidas: {paginas_sem_links_novos}/3",
-                        )
-
+                        log("paginação", f"Nenhum produto novo. Tentativas: {paginas_sem_links_novos}/3")
                         if paginas_sem_links_novos >= 3:
-                            log("paginação", "Três páginas seguidas sem links novos. Encerrando para evitar loop.")
                             break
-
                         if not _ir_proxima_pagina(page, pagina_atual=pagina_atual):
-                            log("paginação", "Não há próxima página disponível. Encerrando.")
                             break
-
                         pagina_atual += 1
                         continue
 
                     paginas_sem_links_novos = 0
 
                     for indice_pagina, href in enumerate(links_novos, start=1):
+                        
+                        if limite_por_query > 0 and processados_nesta_query >= limite_por_query:
+                            log("busca", f"Limite rotativo de {limite_por_query} anúncios por pesquisa atingido! Pulando termo.")
+                            break
+                            
                         if not sem_limite_produtos and total_processados >= int(limite):
-                            log("busca", f"Limite total atingido: {total_processados}/{limite}.")
                             break
 
                         urls_processadas.add(href)
                         total_processados += 1
+                        processados_nesta_query += 1
 
                         secao(f"PÁGINA {pagina_atual} | PRODUTO {indice_pagina}/{len(links_novos)}")
                         bloco("navegação")
-                        log("navegação", f"Produto geral {total_processados}/{limite_txt}")
                         log("navegação", f"Abrindo anúncio: {href}")
 
                         prod_page = context.new_page()
@@ -707,13 +584,8 @@ def rodar_playwright_mercadolivre(
                                 manter_sem_medida = mini_manter_sem_medida and mini_status == "REVISAR_SEM_MEDIDA"
                                 eh_suspeito_manual = mini_status == "SUSPEITO_MANUAL" or str(mini_info.get("mini_suspeito_manual") or "").upper() == "SIM"
 
-                                bloco("mini celular")
-                                log("mini celular", f"Status: {mini_status or 'não classificado'}")
-                                log("mini celular", f"Motivo: {mini_info.get('mini_motivo') or 'sem motivo'}")
-                                if eh_suspeito_manual:
-                                    log("mini celular", f"Suspeito manual: {mini_info.get('mini_suspeito_tipo') or 'SIM'} - {mini_info.get('mini_suspeito_motivo') or mini_info.get('mini_motivo') or ''}")
-                                if mini_info.get("mini_evidencia"):
-                                    log("mini celular", f"Evidência: {mini_info.get('mini_evidencia')}")
+                                log("mini celular", f"Status: {mini_status}")
+                                log("mini celular", f"Motivo: {mini_info.get('mini_motivo')}")
 
                                 if not (manter_por_medida or manter_sem_medida):
                                     destino_suspeito = eh_suspeito_manual
@@ -721,7 +593,7 @@ def rodar_playwright_mercadolivre(
                                         dados,
                                         {
                                             "status_validacao": "SUSPEITO_MANUAL" if destino_suspeito else "FORA_ESCOPO_MINI",
-                                            "motivo_validacao": mini_info.get("mini_motivo", "Fora do recorte de mini celular"),
+                                            "motivo_validacao": mini_info.get("mini_motivo", "Fora do recorte"),
                                             "irregularity_reasons": "",
                                             "warnings": mini_info.get("mini_motivo", ""),
                                             "modo_match_base": "mini_suspeito_manual" if destino_suspeito else "mini_descartado",
@@ -763,68 +635,31 @@ def rodar_playwright_mercadolivre(
                                     }
                                 )
 
-                            bloco("produto")
-                            log("produto", f"Nome: {linha_produto.get('name') or linha_produto.get('titulo') or 'não encontrado'}")
-                            log("anatel", f"Código: {linha_produto.get('anatel_number') or linha_produto.get('codigo_anatel_principal') or 'não encontrado'}")
-                            log("marca", f"Marca: {linha_produto.get('brand') or linha_produto.get('marca') or 'não encontrada'}")
-                            log("modelo", f"Modelo: {linha_produto.get('modelo_decisivo') or linha_produto.get('model') or linha_produto.get('modelo') or 'não encontrado'}")
                             log("resultado", f"Situação: {linha_produto.get('status') or linha_produto.get('status_validacao')}")
-
-                            motivo = linha_produto.get("irregularity_reasons") or linha_produto.get("motivo_validacao") or ""
-                            if motivo:
-                                log("motivo", motivo)
-
-                            bloco("arquivos")
                             _salvar_print(prod_page, saida_base, linha_produto)
                             _salvar_resultados(saida_base, linhas, comentarios_linhas, descartados_mini, suspeitos_mini)
 
                         except Exception as exc:
-                            bloco("erro")
-                            log("erro", f"Falha ao processar produto: {type(exc).__name__}: {exc}")
-
-                            linhas.append(
-                                {
-                                    "pid": gerar_id(href),
-                                    "marketplace_id": "2",
-                                    "name": "",
-                                    "titulo": "",
-                                    "link": href,
-                                    "url": href,
-                                    "status": "ERRO",
-                                    "status_validacao": "ERRO",
-                                    "motivo_validacao": f"Falha ao processar: {type(exc).__name__}: {exc}",
-                                    "irregularity_reasons": f"Falha ao processar: {type(exc).__name__}: {exc}",
-                                    "created_at": time.strftime("%Y-%m-%d"),
-                                    "query_busca": consulta_query,
-                                }
-                            )
-                            _salvar_resultados(saida_base, linhas, comentarios_linhas, descartados_mini, suspeitos_mini)
-
+                            log("erro", f"Falha ao processar produto: {exc}")
                         finally:
                             try:
                                 prod_page.close()
                             except Exception:
                                 pass
     
-                            bloco("navegação")
-                            log("navegação", f"Produto geral {total_processados}/{limite_txt} finalizado.")
+                    if limite_por_query > 0 and processados_nesta_query >= limite_por_query:
+                        break
 
-                if not sem_limite_produtos and total_processados >= int(limite):
-                    log("busca", f"Limite total atingido: {total_processados}/{limite}.")
-                    break
+                    if not sem_limite_produtos and total_processados >= int(limite):
+                        break
 
-                if not sem_limite_paginas and pagina_atual >= int(max_paginas):
-                    log("paginação", f"Máximo de páginas atingido: {pagina_atual}/{max_paginas}.")
-                    break
+                    if not sem_limite_paginas and pagina_atual >= int(max_paginas):
+                        break
 
-                bloco("paginação")
-                log("paginação", "Produtos da página finalizados. Tentando avançar para a próxima página.")
+                    if not _ir_proxima_pagina(page, pagina_atual=pagina_atual):
+                        break
 
-                if not _ir_proxima_pagina(page, pagina_atual=pagina_atual):
-                    log("paginação", "Não encontrei próxima página. Encerrando.")
-                    break
-
-                pagina_atual += 1
+                    pagina_atual += 1
 
         finally:
             try:
@@ -837,35 +672,10 @@ def rodar_playwright_mercadolivre(
     resumo = {
         "saida": str(saida_base.resolve()),
         "total_produtos": len(linhas),
-        "total_comentarios": len(comentarios_linhas),
-        "regulares": sum(
-            1
-            for l in linhas
-            if str(l.get("status_validacao") or l.get("status")).upper() == "REGULAR"
-        ),
-        "irregulares": sum(
-            1
-            for l in linhas
-            if str(l.get("status_validacao") or l.get("status")).upper() == "IRREGULAR"
-        ),
-        "erros": sum(
-            1
-            for l in linhas
-            if str(l.get("status_validacao") or l.get("status")).upper() == "ERRO"
-        ),
-        "mini_modo": "ativado" if mini_celulares else "desativado",
         "mini_mantidos": sum(1 for l in linhas if str(l.get("mini_status") or "") == "MANTER"),
-        "mini_revisar_sem_medida": sum(1 for l in linhas if str(l.get("mini_status") or "") == "REVISAR_SEM_MEDIDA"),
         "mini_descartados": len(descartados_mini),
         "mini_suspeitos_manual": len(suspeitos_mini),
-        "paginas_maximas": max_paginas_txt,
         "buscas_total": len(consultas_busca),
-        "buscas": [q for q, _ in consultas_busca],
-        "urls_processadas": len(urls_processadas),
-        "products_parquet": str((saida_base / "products.parquet").resolve()),
-        "comments_parquet": str((saida_base / "comments.parquet").resolve()),
-        "products_descartados_mini_parquet": str((saida_base / "products_descartados_mini.parquet").resolve()) if mini_celulares else "",
-        "products_suspeitos_mini_parquet": str((saida_base / "products_suspeitos_mini.parquet").resolve()) if mini_celulares else "",
     }
 
     secao("Resumo Playwright")
